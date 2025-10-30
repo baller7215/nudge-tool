@@ -23,11 +23,27 @@ const HomePage = () => {
 
   return (
     <>
-      <Flex width="100vw" height="100vh" minHeight="100vh" m={0} p={0}>
-        <Box flex="1" height="100vh" minHeight="100vh" minWidth={0}>
+      {/* Big TwoCents H1 Bar */}
+      <Box 
+        bg="#7B1EA2E5" 
+        color="white" 
+        //textAlign="center" 
+        py={4} 
+        px={4}
+        boxShadow="lg"
+        position="relative"
+        zIndex={10}
+      >
+        <Text as="h1" fontSize="xl" fontWeight="bold" letterSpacing="wide">
+          Two Cents
+        </Text>
+      </Box>
+      
+      <Flex width="100vw" height="calc(100vh - 64px)" minHeight="calc(100vh - 64px)" m={0} p={0} overflow="hidden">
+        <Box flex="1" height="100%" minWidth={0} overflow="hidden">
           <TextScratchpad sessionId={sessionId} />
         </Box>
-        <Box flex="1" height="100vh" minHeight="100vh" minWidth={0}>
+        <Box flex="1" height="100%" minWidth={0} overflow="hidden">
           <Chatbot />
         </Box>
       </Flex>

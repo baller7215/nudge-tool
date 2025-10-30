@@ -22,6 +22,8 @@ import spin from '../assets/spin.png';
 import { sessionApi } from '../../api/sessionApi.js';
 import { useSession } from '../context/SessionContext';
 import { apiUrl } from '../../api/index.jsx';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 const Chatbot = () => {
   const { sessionId, setSessionId, scratchpadText, messages, setMessages } = useSession();
@@ -306,53 +308,47 @@ const Chatbot = () => {
     });
   };
 
-  // Format assistant messages for better readability
-  const formatAssistantMessage = (content) => {
-    // Split content into lines
-    const lines = content.split('\n');
-    
-    return lines.map((line, index) => {
-      // Check if line contains numbered list items
-      const numberedMatch = line.match(/^(\d+\.\s+)(.+)/);
-      if (numberedMatch) {
-        return (
-          <Box key={index} mb={2}>
-            <Text as="span" fontWeight="bold" color="purple.600">
-              {numberedMatch[1]}
-            </Text>
-            <Text as="span">{numberedMatch[2]}</Text>
-          </Box>
-        );
-      }
-      
-      // Check if line contains bullet points
-      const bulletMatch = line.match(/^(\*\s+)(.+)/);
-      if (bulletMatch) {
-        return (
-          <Box key={index} mb={2} pl={4}>
-            <Text as="span" color="purple.600">• </Text>
-            <Text as="span">{bulletMatch[2]}</Text>
-          </Box>
-        );
-      }
-      
-      // Check if line is a header (starts with **)
-      const headerMatch = line.match(/^\*\*(.+)\*\*$/);
-      if (headerMatch) {
-        return (
-          <Text key={index} fontWeight="bold" fontSize="lg" color="purple.600" mb={2}>
-            {headerMatch[1]}
-          </Text>
-        );
-      }
-      
-      // Regular text line
-      return (
-        <Text key={index} mb={2}>
-          {line}
-        </Text>
-      );
-    });
+  // Render markdown with proper styling for assistant messages
+  const renderMarkdown = (content) => {
+    return (
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          p: ({ children }) => <Text mb={2}>{children}</Text>,
+          h1: ({ children }) => <Text as="h1" fontSize="2xl" fontWeight="bold" color="purple.600" mb={2}>{children}</Text>,
+          h2: ({ children }) => <Text as="h2" fontSize="xl" fontWeight="bold" color="purple.600" mb={2}>{children}</Text>,
+          h3: ({ children }) => <Text as="h3" fontSize="lg" fontWeight="bold" color="purple.600" mb={2}>{children}</Text>,
+          h4: ({ children }) => <Text as="h4" fontSize="md" fontWeight="bold" color="purple.600" mb={2}>{children}</Text>,
+          ul: ({ children }) => <Box as="ul" pl={4} mb={2} style={{ listStylePosition: 'inside' }}>{children}</Box>,
+          ol: ({ children }) => <Box as="ol" pl={4} mb={2} style={{ listStylePosition: 'inside' }}>{children}</Box>,
+          li: ({ children }) => <Box as="li" mb={1}>{children}</Box>,
+          strong: ({ children }) => <Text as="strong" fontWeight="bold">{children}</Text>,
+          em: ({ children }) => <Text as="em" fontStyle="italic">{children}</Text>,
+          code: ({ children, className }) => {
+            const isInline = !className;
+            return isInline ? (
+              <Box as="code" bg="gray.100" px={1} py={0.5} borderRadius="sm" fontSize="0.9em">{children}</Box>
+            ) : (
+              <Box as="pre" bg="gray.100" p={3} borderRadius="md" overflowX="auto" mb={2}>
+                <Text as="code" fontSize="0.85em">{children}</Text>
+              </Box>
+            );
+          },
+          a: ({ href, children }) => (
+            <Box as="a" href={href} color="blue.500" textDecoration="underline" target="_blank" rel="noopener noreferrer">
+              {children}
+            </Box>
+          ),
+          blockquote: ({ children }) => (
+            <Box as="blockquote" borderLeft="4px solid" borderColor="purple.400" pl={4} mb={2} fontStyle="italic">
+              {children}
+            </Box>
+          ),
+        }}
+      >
+        {content}
+      </ReactMarkdown>
+    );
   };
 
   // Save button handler
@@ -399,13 +395,13 @@ const Chatbot = () => {
   };
 
   return (
-    <Box display="flex" flexDirection="column" height="100%" width="100%" bg="#F6F8FA" position="relative">
+    <Box display="flex" flexDirection="column" height="100%" width="100%" bg="#F6F8FA" position="relative" overflow="hidden">
       <Box display="flex" position="relative" zIndex={2} flexShrink={0}>
         <Box position="relative" display="inline-block" width="100%">
           <Flex align="center" justify="space-between" bg="white" px={8} py={2} position="relative" zIndex={2} width="100%">
-            <Box fontWeight="bold" fontSize="lg" color="gray.800">
+            <Text as="h2" fontWeight="bold" fontSize="lg" color="gray.800">
               Chat
-            </Box>
+            </Text>
             <HStack spacing={2}>
               <Button leftIcon={<FaTrash />} colorScheme="red" variant="outline" size="sm" onClick={handleClearChat}>
                 Clear
@@ -428,7 +424,8 @@ const Chatbot = () => {
         borderColor="gray.200"
         display="flex"
         flexDirection="column"
-        minHeight={0} // Important: allows flex child to shrink
+        minHeight={0}
+        overflow="hidden"
         pt={8}
       >
         <VStack 
@@ -465,7 +462,7 @@ const Chatbot = () => {
                 ml={message.role === "assistant" ? 0 : "auto"}
                 mr={message.role === "user" ? 0 : "auto"}
               >
-                {message.role === "assistant" ? formatAssistantMessage(message.content) : message.content}
+                {message.role === "assistant" ? renderMarkdown(message.content) : message.content}
                 <Tooltip label="Copy" hasArrow>
                   <IconButton
                     icon={<FaRegCopy />}
@@ -545,7 +542,7 @@ const Chatbot = () => {
           <div ref={messagesEndRef} />
         </VStack>
         {/* Input area */}
-        <HStack px={6} pb={6} pt={0} spacing={3} bg="#F6F8FA" flexShrink={0}>
+        <HStack px={6} pb={6} pt={6} spacing={3} bg="#F6F8FA" flexShrink={0}>
           <Tooltip label="Spin for nudge" hasArrow>
             <IconButton
               icon={<img src={spin} alt="Spin" width={20} height={20} style={{ display: 'inline-block' }} />}

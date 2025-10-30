@@ -242,7 +242,7 @@ const TextScratchpad = ({ sessionId }) => {
   };
 
   return (
-    <Box display="flex" flexDirection="column" height="100%" width="100%" bg="#F6F8FA" position="relative">
+    <Box display="flex" flexDirection="column" height="100%" width="100%" bg="white" position="relative" overflow="hidden">
       <Box display="flex" position="relative" zIndex={2}>
         {/* <Flex align="center" justify="space-between" bg="white" px={8} py={2} position="relative" zIndex={2} width="100%">
           <Box fontWeight="bold" fontSize="lg" color="gray.800">
@@ -275,6 +275,7 @@ const TextScratchpad = ({ sessionId }) => {
         display="flex"
         flexDirection="column"
         position="relative"
+        overflow="hidden"
       >
         <Tabs
           variant="enclosed"
@@ -283,13 +284,14 @@ const TextScratchpad = ({ sessionId }) => {
           display="flex"
           flexDirection="column"
           onChange={handleTabChange}
+          height="100%"
         >
-          <TabList>
-            <Tab  fontWeight="bold"
+          <TabList flexShrink={0}>
+            <Tab as="h2" fontWeight="bold"
             fontSize="lg"
             color="gray.800">Scratchpad</Tab>
             
-            <Tab  fontWeight="bold"
+            <Tab as="h2" fontWeight="bold"
             fontSize="lg"
             color="gray.800">History</Tab>
            
@@ -297,44 +299,48 @@ const TextScratchpad = ({ sessionId }) => {
           
           
 
-          <TabPanels flex="1" minHeight={0} display="flex" flexDirection="column">
-            <TabPanel flex="1" minHeight={0} display="flex" flexDirection="column" p={0} position="relative">
-              <VStack spacing={4} align="stretch" flex="1" minHeight={0} px={5} py={5}>
-                <Textarea
-                  placeholder="Start typing here..."
-                  value={scratchpadText}
-                  onChange={handleScratchpadChange}
-                  size="lg"
-                  resize="none"
-                  flex="1"
-                  minHeight={0}
-                  maxH="100%"
-                  bg="white"
-                  overflowY="auto"
-                />
-              </VStack>
-              {showCards && (
-                <Box mt={2}>
-                  <ExpandableCards 
-                    sessionId={sessionId} 
-                    onCardCountChange={handleCardCountChange}
-                    onCardsChange={handleCardsChange}
-                    cards={cards}
-                    spawnTrigger={spawnTrigger}
+          <TabPanels flex="1" minHeight={0} display="flex" flexDirection="column" overflow="hidden">
+            <TabPanel flex="1" minHeight={0} display="flex" flexDirection="column" p={0} position="relative" overflow="hidden">
+              <Box display="flex" flexDirection="column" height="100%" overflow="hidden">
+                <Box flex="1" minHeight={0} overflow="auto" px={5} py={5}>
+                  <Textarea
+                    placeholder="Start typing here..."
+                    value={scratchpadText}
+                    onChange={handleScratchpadChange}
+                    size="lg"
+                    resize="none"
+                    width="100%"
+                    height="100%"
+                    bg="white"
+                    border="none"
+                    outline="none"
+                    _focus={{ border: "none", boxShadow: "none" }}
+                    p={0}
                   />
                 </Box>
-              )}
-              {/* Toggle Button Row */}
-              <Box 
-                bg="white" 
-                px={5} 
-                py={3} 
-                borderTop="1px solid" 
-                borderColor="gray.200"
-                display="flex"
-                justifyContent="space-between"
-                alignItems="center"
-              >
+                {showCards && (
+                  <Box flexShrink={0} mt={2}>
+                    <ExpandableCards 
+                      sessionId={sessionId} 
+                      onCardCountChange={handleCardCountChange}
+                      onCardsChange={handleCardsChange}
+                      cards={cards}
+                      spawnTrigger={spawnTrigger}
+                    />
+                  </Box>
+                )}
+                {/* Toggle Button Row */}
+                <Box 
+                  bg="white" 
+                  px={5} 
+                  py={3} 
+                  borderTop="1px solid" 
+                  borderColor="gray.200"
+                  display="flex"
+                  justifyContent="space-between"
+                  alignItems="center"
+                  flexShrink={0}
+                >
                 <HStack spacing={4} align="center">
                   <ToggleCardsButton show={showCards} count={cardCount} onClick={() => setShowCards((v) => !v)} />
                   {contextSessionId && (
@@ -365,17 +371,14 @@ const TextScratchpad = ({ sessionId }) => {
                     </VStack>
                   )}
                 </HStack>
-                <HStack spacing={2}>
-                 
-                  <Button colorScheme="red" variant="outline" size="sm" onClick={handleLogout}>
-                    Logout
-                  </Button>
-                </HStack>
+                </Box>
               </Box>
             </TabPanel>
 
-            <TabPanel flex="1" p={0}>
-              <CardHistory sessionId={sessionId} shouldRefresh={activeTab === 1} />
+            <TabPanel flex="1" p={0} overflow="hidden" height="100%">
+              <Box height="100%" overflow="auto">
+                <CardHistory sessionId={sessionId} shouldRefresh={activeTab === 1} />
+              </Box>
             </TabPanel>
           </TabPanels>
         </Tabs>

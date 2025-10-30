@@ -1,5 +1,6 @@
 import { Nudge } from '../models/NudgeModel.js';
 import sessionService from '../services/sessionService.js';
+import { getSmartNudge } from '../services/nudgeService.js';
 
 export const getRandomNudge = async (req, res) => {
     const { sessionId } = req.query;
@@ -41,6 +42,42 @@ export const getRandomNudge = async (req, res) => {
     } catch (error) {
         console.error('Error getting random nudge:', error);
         res.status(500).json({ error: 'Failed to get random nudge' });
+    }
+};
+
+export const getSmartNudgeRecommendation = async (req, res) => {
+    const { sessionId, scratchpadText, messages, shownNudgeIds } = req.body;
+    
+    try {
+        // Get smart nudge recommendation
+        const nudge = await getSmartNudge(
+            scratchpadText || '', 
+            messages || [],
+            shownNudgeIds || []
+        );
+
+        // Track in session if sessionId is provided
+        if (sessionId) {
+            try {
+                await sessionService.addMessage(sessionId, {
+                    role: 'assistant',
+                    content: nudge.text,
+                    timestamp: new Date(),
+                    isNudge: true,
+                    nudgeId: nudge._id,
+                    responseTime: null,
+                    tokensUsed: 0
+                });
+            } catch (sessionError) {
+                console.error('Error tracking smart nudge in session:', sessionError);
+                // Don't fail the main request if session tracking fails
+            }
+        }
+
+        res.json(nudge);
+    } catch (error) {
+        console.error('Error getting smart nudge:', error);
+        res.status(500).json({ error: 'Failed to get smart nudge' });
     }
 };
 

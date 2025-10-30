@@ -13,12 +13,14 @@ import {
 import { FaThumbsUp, FaThumbsDown } from 'react-icons/fa';
 import { sessionApi } from '../../api/sessionApi.js';
 import { apiUrl } from '../../api/index.jsx';
+import { useSession } from '../context/SessionContext.jsx';
 
 const ExpandableCards = ({ sessionId, onCardCountChange, onCardsChange, cards, spawnTrigger }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [cardFeedback, setCardFeedback] = useState({}); // { cardId: 'like' | 'dislike' }
   const [filter, setFilter] = useState('all'); // 'all', 'liked', 'disliked', 'neutral'
   const toast = useToast();
+  const { scratchpadText, messages } = useSession();
 
   console.log('ExpandableCards sessionId:', sessionId);
 
@@ -45,16 +47,56 @@ const ExpandableCards = ({ sessionId, onCardCountChange, onCardsChange, cards, s
     return true;
   });
 
-  const fetchNudges = async () => {
+  const fetchNudges = async (useSmart = true) => {
     setIsLoading(true);
     try {
-      const url = sessionId 
-        ? apiUrl(`/api/random?sessionId=${sessionId}`)
-        : apiUrl("/api/random");
+      // Get list of already-shown nudge IDs to prevent duplicates
+      const shownNudgeIds = cards.map(card => card.nudgeId).filter(Boolean);
       
-      const response = await fetch(url);
-      if (!response.ok) throw new Error("Failed to fetch nudge");
-      const data = await response.json();
+      let data;
+      
+      if (useSmart && sessionId && (scratchpadText || messages.length > 0)) {
+        // Use smart nudge API with context
+        console.log('Fetching smart nudge with context');
+        const response = await fetch(apiUrl('/api/smart'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sessionId,
+            scratchpadText,
+            shownNudgeIds, // Send already-shown IDs to backend
+            messages: messages.filter(m => m.role !== 'assistant' || !m.nudge) // Exclude existing nudges from context
+          })
+        });
+        
+        if (!response.ok) throw new Error("Failed to fetch smart nudge");
+        data = await response.json();
+      } else {
+        // Fall back to random nudge
+        console.log('Fetching random nudge');
+        
+        // For random nudges, we need to exclude already-shown ones
+        // Try to get a unique nudge by filtering on the frontend
+        let attempts = 0;
+        const maxAttempts = 5;
+        
+        while (attempts < maxAttempts) {
+          const url = sessionId 
+            ? apiUrl(`/api/random?sessionId=${sessionId}`)
+            : apiUrl("/api/random");
+          
+          const response = await fetch(url);
+          if (!response.ok) throw new Error("Failed to fetch nudge");
+          data = await response.json();
+          
+          // Check if this is a duplicate
+          const isDuplicate = shownNudgeIds.includes(data._id.toString());
+          if (!isDuplicate) break;
+          
+          attempts++;
+        }
+      }
+      
       const newCard = {
         id: Date.now(),
         title: data.category || 'Nudge',
@@ -66,6 +108,13 @@ const ExpandableCards = ({ sessionId, onCardCountChange, onCardsChange, cards, s
       onCardsChange(newCards);
     } catch (error) {
       console.error("Error fetching nudge:", error);
+      toast({
+        title: "Failed to load nudge",
+        description: "Please try again",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+      });
     } finally {
       setIsLoading(false);
     }
@@ -111,9 +160,10 @@ const ExpandableCards = ({ sessionId, onCardCountChange, onCardsChange, cards, s
     <Box width="100%" py={5} px={5}>
       <Flex justify="space-between" align="center" mb={4}>
         <Button
+          as="h3"
           colorScheme="pink"
           leftIcon={<Box as="span" fontSize="xl">+</Box>}
-          onClick={fetchNudges}
+          onClick={() => fetchNudges(true)} // Manual "Add Card" uses smart logic
           isLoading={isLoading}
           borderRadius="lg"
           px={4}
@@ -195,7 +245,7 @@ const ExpandableCards = ({ sessionId, onCardCountChange, onCardsChange, cards, s
             </Tooltip>
             
             <VStack align="stretch" spacing={2} flex="1">
-              <Text fontWeight="bold" fontSize="md" mb={1}>{card.title}</Text>
+              <Text as="h4" fontWeight="bold" fontSize="md" mb={1}>{card.title}</Text>
               <Text fontSize="sm" color="gray.700">{card.shortDescription}</Text>
             </VStack>
             <HStack spacing={4} mt={4} justify="center">
