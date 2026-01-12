@@ -59,7 +59,8 @@ const Chatbot = () => {
 
   // Update session stats when messages change
   useEffect(() => {
-    if (sessionId && messages.length > 0) {
+    // Avoid hitting stats with temporary session IDs; wait for real session creation
+    if (sessionId && !sessionId.startsWith('temp_') && messages.length > 0) {
       sessionApi.getSessionStats(sessionId)
         .then(stats => setSessionStats(stats))
         .catch(error => console.error('Failed to get session stats:', error));
