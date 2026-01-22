@@ -3,6 +3,7 @@ import { Box, Tab, TabList, TabPanel, TabPanels, Tabs } from "@chakra-ui/react";
 import CardHistory from "./CardHistory";
 import { useSession } from "../context/SessionContext";
 import ScratchpadTab from "./ScratchpadTab";
+import PlantUmlTab from "./PlantUmlTab";
 import { useCardSpawning } from "../hooks/useCardSpawning";
 
 const BACKEND_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
@@ -84,17 +85,27 @@ const TextScratchpad = ({ sessionId }) => {
           <TabList flexShrink={0}>
             <Tab as="h2" fontWeight="bold"
             fontSize="lg"
-            color="gray.800">Scratchpad</Tab>
+            color="gray.800"
+            cursor="pointer">UML</Tab>
+
+            <Tab as="h2" fontWeight="bold"
+            fontSize="lg"
+            color="gray.800"
+            cursor="pointer">Scratchpad</Tab>
             
             <Tab as="h2" fontWeight="bold"
             fontSize="lg"
-            color="gray.800">History</Tab>
+            color="gray.800"
+            cursor="pointer">History</Tab>
            
           </TabList>
           
           
 
           <TabPanels flex="1" minHeight={0} display="flex" flexDirection="column" overflow="hidden">
+            <TabPanel flex="1" minHeight={0} display="flex" flexDirection="column" p={0} position="relative" overflow="hidden">
+              <PlantUmlTab />
+            </TabPanel>
             <TabPanel flex="1" minHeight={0} display="flex" flexDirection="column" p={0} position="relative" overflow="hidden">
               <ScratchpadTab
                 sessionId={sessionId}
