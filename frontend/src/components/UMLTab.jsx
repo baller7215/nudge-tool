@@ -1,0 +1,86 @@
+import React from "react";
+import { Box, Textarea } from "@chakra-ui/react";
+import ExpandableCards from "./ExpandableCards";
+import CardControls from "./CardControls";
+import { useSession } from "../context/SessionContext";
+
+const UMLTab = ({
+  sessionId,
+  showCards,
+  setShowCards,
+  cards,
+  onCardsChange,
+  cardCount,
+  onCardCountChange,
+  spawnTrigger,
+  spawnFrequency,
+  setSpawnFrequency,
+  hasSession,
+}) => {
+  const { sessionId: contextSessionId, setSessionId, scratchpadText, setScratchpadText } = useSession();
+
+  const handleScratchpadChange = async (e) => {
+    const newText = e.target.value;
+    setScratchpadText(newText);
+
+    if (!contextSessionId && newText.length > 0) {
+      try {
+        const newSessionId = await window.sessionApi.createSession({
+          metadata: {
+            userAgent: navigator.userAgent,
+            deviceType: /Mobile|Android|iPhone|iPad/.test(navigator.userAgent) ? "mobile" : "desktop",
+          },
+        });
+        setSessionId(newSessionId);
+        await window.sessionApi.addScratchpadSnapshot(newSessionId, newText);
+      } catch (err) {
+        console.error("Failed to create session and save initial scratchpad snapshot:", err);
+      }
+    } else if (contextSessionId && newText.length > 0) {
+      // if session already exists, do nothing (snapshotting handled elsewhere)
+    }
+  };
+
+  return (
+    <Box display="flex" flexDirection="column" height="100%" overflow="hidden">
+      <Box flex="1" minHeight={0} overflow="auto" px={5} py={5}>
+        <Textarea
+          placeholder="Start typing here..."
+          value={scratchpadText}
+          onChange={handleScratchpadChange}
+          size="lg"
+          resize="none"
+          width="100%"
+          height="100%"
+          bg="white"
+          border="none"
+          outline="none"
+          _focus={{ border: "none", boxShadow: "none" }}
+          p={0}
+        />
+      </Box>
+      {showCards && (
+        <Box flexShrink={0} mt={2}>
+          <ExpandableCards
+            sessionId={sessionId}
+            onCardCountChange={onCardCountChange}
+            onCardsChange={onCardsChange}
+            cards={cards}
+            spawnTrigger={spawnTrigger}
+          />
+        </Box>
+      )}
+      <CardControls
+        showCards={showCards}
+        onToggleShowCards={() => setShowCards((v) => !v)}
+        cardCount={cardCount}
+        spawnFrequency={spawnFrequency}
+        onChangeSpawnFrequency={setSpawnFrequency}
+        hasSession={hasSession}
+      />
+    </Box>
+  );
+};
+
+export default UMLTab;
+

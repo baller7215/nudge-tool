@@ -3,6 +3,7 @@ import { Box, Tab, TabList, TabPanel, TabPanels, Tabs } from "@chakra-ui/react";
 import CardHistory from "./CardHistory";
 import { useSession } from "../context/SessionContext";
 import ScratchpadTab from "./ScratchpadTab";
+import PlantUmlTab from "./PlantUmlTab";
 import { useCardSpawning } from "../hooks/useCardSpawning";
 
 const BACKEND_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
@@ -12,15 +13,15 @@ const TextScratchpad = ({ sessionId }) => {
   const [activeTab, setActiveTab] = useState(0);
   const [showCards, setShowCards] = useState(true);
   const [cardCount, setCardCount] = useState(0);
-  const preservedCardCountRef = useRef(0); // Preserve card count when hidden
-  const [cards, setCards] = useState([]); // Lift cards state up
+  const preservedCardCountRef = useRef(0); // preserve card count when hidden
+  const [cards, setCards] = useState([]); // lift cards state up
   const { spawnFrequency, setSpawnFrequency, spawnTrigger } = useCardSpawning({
     showCards,
     sessionId: contextSessionId,
   });
 
   const handleTabChange = (index) => {
-    setActiveTab(index);
+    setActiveTab(index);  
   };
 
   // Callback to update card count from ExpandableCards
@@ -84,17 +85,28 @@ const TextScratchpad = ({ sessionId }) => {
           <TabList flexShrink={0}>
             <Tab as="h2" fontWeight="bold"
             fontSize="lg"
-            color="gray.800">Scratchpad</Tab>
+            color="gray.800"
+            cursor="pointer">UML</Tab>
+
+            <Tab as="h2" fontWeight="bold"
+            fontSize="lg"
+            color="gray.800"
+            cursor="pointer">Scratchpad</Tab>
             
             <Tab as="h2" fontWeight="bold"
             fontSize="lg"
-            color="gray.800">History</Tab>
+            color="gray.800"
+            cursor="pointer">History</Tab>
            
           </TabList>
           
           
 
           <TabPanels flex="1" minHeight={0} display="flex" flexDirection="column" overflow="hidden">
+            <TabPanel flex="1" minHeight={0} display="flex" flexDirection="column" p={0} position="relative" overflow="hidden">
+              <PlantUmlTab />
+            </TabPanel>
+
             <TabPanel flex="1" minHeight={0} display="flex" flexDirection="column" p={0} position="relative" overflow="hidden">
               <ScratchpadTab
                 sessionId={sessionId}
@@ -113,7 +125,7 @@ const TextScratchpad = ({ sessionId }) => {
 
             <TabPanel flex="1" p={0} overflow="hidden" height="100%">
               <Box height="100%" overflow="auto">
-                <CardHistory sessionId={sessionId} shouldRefresh={activeTab === 1} />
+                <CardHistory sessionId={sessionId} shouldRefresh={activeTab === 2} />
               </Box>
             </TabPanel>
           </TabPanels>

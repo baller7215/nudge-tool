@@ -4,6 +4,7 @@ import { connectDB } from "./config/db.js";
 import chatRoutes from "./routes/chatRoutes.js";
 import nudgeRoutes from "./routes/nudgeRoutes.js";
 import sessionRoutes from "./routes/sessionRoutes.js";
+import plantumlRoutes from "./routes/plantumlRoutes.js";
 import cors from "cors";
 import session from "express-session";
 import passport from "passport";
@@ -79,6 +80,7 @@ app.get("/api/auth/logout", (req, res) => {
 app.use("/api", chatRoutes);
 app.use("/api", nudgeRoutes);
 app.use("/api/session", sessionRoutes);
+app.use("/api/plantuml", plantumlRoutes);
 
 app.get("/", (req, res) => {
     res.send("Server is ready");
