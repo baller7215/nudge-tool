@@ -1,4 +1,3 @@
-import React from "react";
 import { Box, HStack, VStack, Text, Slider, SliderTrack, SliderFilledTrack, SliderThumb } from "@chakra-ui/react";
 import ToggleCardsButton from "./ToggleCardsButton";
 

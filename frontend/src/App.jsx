@@ -4,7 +4,6 @@ import { useEffect } from "react"
 import HomePage from "./pages/HomePage"
 import LoginPage from "./pages/LoginPage"
 import SignupPage from "./pages/SignupPage"
-import Navbar from "./components/Navbar"
 import { SessionProvider } from "./context/SessionContext"
 
 function App() {

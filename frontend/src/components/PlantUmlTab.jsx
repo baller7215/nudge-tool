@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useRef } from "react";
-import { Box, Button, Textarea, Spinner, Center, Text, HStack, IconButton, useToast } from "@chakra-ui/react";
+import { useState, useEffect } from "react";
+import { Box, Textarea, Spinner, Center, Text, HStack, IconButton, useToast } from "@chakra-ui/react";
 import { EditIcon, ViewIcon } from "@chakra-ui/icons";
 import { apiUrl } from "../../api/index.jsx";
 
 const DEFAULT_PLANTUML = `@startuml
-Alice -> Bob: Authentication Request
-Bob --> Alice: Authentication Response
+start
+:Hello world;
+stop
 @enduml`;
 
 const PlantUmlTab = () => {
