@@ -13,15 +13,15 @@ const TextScratchpad = ({ sessionId }) => {
   const [activeTab, setActiveTab] = useState(0);
   const [showCards, setShowCards] = useState(true);
   const [cardCount, setCardCount] = useState(0);
-  const preservedCardCountRef = useRef(0); // Preserve card count when hidden
-  const [cards, setCards] = useState([]); // Lift cards state up
+  const preservedCardCountRef = useRef(0); // preserve card count when hidden
+  const [cards, setCards] = useState([]); // lift cards state up
   const { spawnFrequency, setSpawnFrequency, spawnTrigger } = useCardSpawning({
     showCards,
     sessionId: contextSessionId,
   });
 
   const handleTabChange = (index) => {
-    setActiveTab(index);
+    setActiveTab(index);  
   };
 
   // Callback to update card count from ExpandableCards
@@ -124,7 +124,7 @@ const TextScratchpad = ({ sessionId }) => {
 
             <TabPanel flex="1" p={0} overflow="hidden" height="100%">
               <Box height="100%" overflow="auto">
-                <CardHistory sessionId={sessionId} shouldRefresh={activeTab === 1} />
+                <CardHistory sessionId={sessionId} shouldRefresh={activeTab === 2} />
               </Box>
             </TabPanel>
           </TabPanels>
