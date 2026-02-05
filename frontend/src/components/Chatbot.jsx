@@ -395,6 +395,102 @@ const Chatbot = () => {
     });
   };
 
+  const handleUpdateUmlFromChat = async () => {
+    if (!messages || messages.length === 0) {
+      toast({
+        title: "No messages yet",
+        description: "Start a conversation before updating the UML diagram.",
+        status: "info",
+        duration: 2500,
+        isClosable: true,
+        position: "top",
+      });
+      return;
+    }
+
+    let currentSessionId = sessionId;
+
+    // Ensure we have a real session (similar flow to sendMessage)
+    if (!currentSessionId) {
+      try {
+        const newSession = await sessionApi.createSession({
+          metadata: {
+            userAgent: navigator.userAgent,
+            deviceType: /Mobile|Android|iPhone|iPad/.test(navigator.userAgent) ? 'mobile' : 'desktop',
+          },
+        });
+        currentSessionId = newSession.sessionId || newSession;
+        setSessionId(currentSessionId);
+      } catch (error) {
+        console.error("Failed to create session for UML update:", error);
+        toast({
+          title: "Unable to create session",
+          description: "UML updates require a session; try again in a moment.",
+          status: "error",
+          duration: 3000,
+          isClosable: true,
+          position: "top",
+        });
+        return;
+      }
+    }
+
+    try {
+      const response = await fetch(apiUrl("/api/uml/from-chat"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: currentSessionId,
+          messages,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to update UML from chat");
+      }
+
+      const data = await response.json();
+      const { plantuml, svg } = data;
+
+      if (plantuml) {
+        // Persist PlantUML so PlantUmlTab can pick it up
+        sessionStorage.setItem("plantuml_code", plantuml);
+        // Optional: notify other components that PlantUML has been updated
+        window.dispatchEvent(new Event("plantuml_updated"));
+      }
+
+      // Optionally append an inline UML checkpoint message with SVG preview
+      if (svg) {
+        const checkpointMessage = {
+          role: "assistant",
+          content: "UML diagram checkpoint updated from the conversation.",
+          umlSvg: svg,
+        };
+        setMessages((prev) => [...prev, checkpointMessage]);
+      }
+
+      toast({
+        title: "UML updated",
+        description: "The UML diagram has been updated based on the conversation.",
+        status: "success",
+        duration: 2500,
+        isClosable: true,
+        position: "top",
+      });
+    } catch (error) {
+      console.error("Error updating UML from chat:", error);
+      toast({
+        title: "Failed to update UML",
+        description: error.message || "An error occurred while updating the diagram.",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+        position: "top",
+      });
+    }
+  };
+
   return (
     <Box display="flex" flexDirection="column" height="100%" width="100%" bg="#F6F8FA" position="relative" overflow="hidden">
       <Box display="flex" position="relative" zIndex={2} flexShrink={0}>
@@ -404,6 +500,14 @@ const Chatbot = () => {
               Chat
             </Text>
             <HStack spacing={2}>
+              <Button
+                colorScheme="purple"
+                variant="outline"
+                size="sm"
+                onClick={handleUpdateUmlFromChat}
+              >
+                Update UML from chat
+              </Button>
               <Button leftIcon={<FaTrash />} colorScheme="red" variant="outline" size="sm" onClick={handleClearChat}>
                 Clear
               </Button>
@@ -463,7 +567,29 @@ const Chatbot = () => {
                 ml={message.role === "assistant" ? 0 : "auto"}
                 mr={message.role === "user" ? 0 : "auto"}
               >
-                {message.role === "assistant" ? renderMarkdown(message.content) : message.content}
+                {message.role === "assistant" ? (
+                  <>
+                    {renderMarkdown(message.content)}
+                    {message.umlSvg && (
+                      <Box
+                        mt={3}
+                        borderRadius="md"
+                        overflow="hidden"
+                        bg="white"
+                        border="1px solid"
+                        borderColor="gray.200"
+                        p={2}
+                      >
+                        <Box
+                          as="div"
+                          dangerouslySetInnerHTML={{ __html: message.umlSvg }}
+                        />
+                      </Box>
+                    )}
+                  </>
+                ) : (
+                  message.content
+                )}
                 <Tooltip label="Copy" hasArrow>
                   <IconButton
                     icon={<FaRegCopy />}

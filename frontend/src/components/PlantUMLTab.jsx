@@ -23,6 +23,20 @@ const PlantUmlTab = () => {
     if (stored) {
       setPlantUmlCode(stored);
     }
+
+    // Listen for external updates (e.g., from Chatbot)
+    const handleUpdated = () => {
+      const latest = sessionStorage.getItem('plantuml_code');
+      if (latest) {
+        setPlantUmlCode(latest);
+      }
+    };
+
+    window.addEventListener('plantuml_updated', handleUpdated);
+
+    return () => {
+      window.removeEventListener('plantuml_updated', handleUpdated);
+    };
   }, []);
 
   // save to sessionStorage whenever code changes

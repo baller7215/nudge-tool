@@ -34,6 +34,12 @@ const scratchpadSnapshotSchema = new mongoose.Schema({
   timestamp: { type: Date, default: Date.now }
 });
 
+const umlStateSchema = new mongoose.Schema({
+  umlType: { type: String, enum: ['class', 'sequence', 'other'], default: 'class' },
+  plantumlCode: { type: String },
+  lastUpdatedAt: { type: Date, default: Date.now }
+});
+
 const sessionSchema = new mongoose.Schema({
   sessionId: { type: String, required: true, unique: true },
   userId: { type: String }, // Optional - for future user authentication
@@ -72,7 +78,8 @@ const sessionSchema = new mongoose.Schema({
     ipAddress: { type: String },
     deviceType: { type: String }
   },
-  scratchpadSnapshots: [scratchpadSnapshotSchema]
+  scratchpadSnapshots: [scratchpadSnapshotSchema],
+  umlState: umlStateSchema
 }, {
   timestamps: true
 });
@@ -197,6 +204,28 @@ sessionSchema.statics.createSession = function(sessionData = {}) {
     sessionId,
     ...sessionData
   });
+};
+
+// method to upsert UML state for the session
+sessionSchema.methods.setUmlState = function(umlData) {
+  this.umlState = {
+    ...(this.umlState ? this.umlState.toObject() : {}),
+    ...umlData,
+    lastUpdatedAt: new Date()
+  };
+  return this.save();
+};
+
+// method to get UML state with sensible defaults
+sessionSchema.methods.getUmlState = function() {
+  if (!this.umlState || !this.umlState.plantumlCode) {
+    return {
+      umlType: 'class',
+      plantumlCode: '@startuml\n@enduml',
+      lastUpdatedAt: this.umlState?.lastUpdatedAt || this.startTime || new Date()
+    };
+  }
+  return this.umlState;
 };
 
 export const Session = mongoose.model('Session', sessionSchema); 
