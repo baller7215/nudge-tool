@@ -29,11 +29,33 @@ const PlantUmlTab = () => {
       setPlantUmlCode(stored);
     }
 
+    const historyRaw = sessionStorage.getItem('plantuml_history_state');
+    if (historyRaw) {
+      try {
+        const history = JSON.parse(historyRaw);
+        setCanUndo(!!history.canUndo);
+        setCanRedo(!!history.canRedo);
+      } catch (e) {
+        console.error("Failed to parse plantuml_history_state:", e);
+      }
+    }
+
     // Listen for external updates (e.g., from Chatbot)
     const handleUpdated = () => {
       const latest = sessionStorage.getItem('plantuml_code');
       if (latest) {
         setPlantUmlCode(latest);
+      }
+
+      const historyRaw = sessionStorage.getItem('plantuml_history_state');
+      if (historyRaw) {
+        try {
+          const history = JSON.parse(historyRaw);
+          setCanUndo(!!history.canUndo);
+          setCanRedo(!!history.canRedo);
+        } catch (e) {
+          console.error("Failed to parse plantuml_history_state on update:", e);
+        }
       }
     };
 
@@ -129,15 +151,29 @@ const PlantUmlTab = () => {
 
       const data = await response.json();
       const updated = data.plantuml;
+      const history = data.history || {};
 
       if (updated) {
         setPlantUmlCode(updated);
         sessionStorage.setItem("plantuml_code", updated);
-        window.dispatchEvent(new Event("plantuml_updated"));
       }
 
-      setCanUndo(!!data.canUndo);
-      setCanRedo(!!data.canRedo);
+      sessionStorage.setItem(
+        "plantuml_history_state",
+        JSON.stringify({
+          canUndo: !!history.canUndo,
+          canRedo: !!history.canRedo,
+          hasHistory: !!history.hasHistory,
+          revisionIndex:
+            typeof history.revisionIndex === "number" ? history.revisionIndex : -1,
+        })
+      );
+
+      // Notify any listeners (e.g., other tabs) that UML/history changed
+      window.dispatchEvent(new Event("plantuml_updated"));
+
+      setCanUndo(!!history.canUndo);
+      setCanRedo(!!history.canRedo);
     } catch (err) {
       console.error(`Error during UML ${action}:`, err);
       toast({

@@ -698,11 +698,26 @@ const Chatbot = () => {
 
                 const data = await response.json();
                 const updatedPlantuml = data.plantuml;
+                const history = data.history || {};
 
                 if (updatedPlantuml) {
                   sessionStorage.setItem("plantuml_code", updatedPlantuml);
-                  window.dispatchEvent(new Event("plantuml_updated"));
                 }
+
+                // Persist latest UML history state so PlantUmlTab can pick it up
+                sessionStorage.setItem(
+                  "plantuml_history_state",
+                  JSON.stringify({
+                    canUndo: !!history.canUndo,
+                    canRedo: !!history.canRedo,
+                    hasHistory: !!history.hasHistory,
+                    revisionIndex:
+                      typeof history.revisionIndex === "number" ? history.revisionIndex : -1,
+                  })
+                );
+
+                // Notify other components (e.g., PlantUmlTab) that UML + history changed
+                window.dispatchEvent(new Event("plantuml_updated"));
 
                 setIsUmlModalOpen(false);
 

@@ -34,6 +34,29 @@ const getCurrentPlantUmlForSession = async (sessionId) => {
 };
 
 /**
+ * Helper to build a lightweight UML history state payload.
+ */
+const buildUmlHistoryState = (session) => {
+  if (!session) {
+    return {
+      hasHistory: false,
+      revisionIndex: -1,
+      canUndo: false,
+      canRedo: false,
+    };
+  }
+
+  return {
+    hasHistory: Array.isArray(session.umlRevisions) && session.umlRevisions.length > 0,
+    revisionIndex: typeof session.currentUmlRevisionIndex === 'number'
+      ? session.currentUmlRevisionIndex
+      : -1,
+    canUndo: session.canUndoUml(),
+    canRedo: session.canRedoUml(),
+  };
+};
+
+/**
  * POST /api/uml/from-chat/propose
  * Body: { sessionId, messages }
  *
@@ -50,7 +73,7 @@ export const proposeFromChat = async (req, res) => {
   }
 
   try {
-    const { currentPlantUml } = await getCurrentPlantUmlForSession(sessionId);
+    const { currentPlantUml, session } = await getCurrentPlantUmlForSession(sessionId);
 
     const proposedPlantUml = await generateUmlFromChat({
       sessionId: sessionId || 'no-session',
@@ -63,6 +86,7 @@ export const proposeFromChat = async (req, res) => {
       proposedPlantUml,
       messageIndex,
       summary,
+      history: buildUmlHistoryState(session),
     });
   } catch (error) {
     console.error('Error proposing UML from chat:', error);
@@ -175,9 +199,7 @@ export const acceptUmlFromChat = async (req, res) => {
 
     return res.json({
       plantuml: latestUmlState.plantumlCode,
-      revisionIndex: updated.currentUmlRevisionIndex,
-      canUndo: updated.canUndoUml(),
-      canRedo: updated.canRedoUml(),
+      history: buildUmlHistoryState(updated),
     });
   } catch (error) {
     console.error('Error accepting UML from chat:', error);
@@ -212,9 +234,7 @@ export const undoUmlFromChat = async (req, res) => {
 
     return res.json({
       plantuml: latestUmlState.plantumlCode,
-      revisionIndex: updated.currentUmlRevisionIndex,
-      canUndo: updated.canUndoUml(),
-      canRedo: updated.canRedoUml(),
+      history: buildUmlHistoryState(updated),
     });
   } catch (error) {
     console.error('Error undoing UML from chat:', error);
@@ -249,9 +269,7 @@ export const redoUmlFromChat = async (req, res) => {
 
     return res.json({
       plantuml: latestUmlState.plantumlCode,
-      revisionIndex: updated.currentUmlRevisionIndex,
-      canUndo: updated.canUndoUml(),
-      canRedo: updated.canRedoUml(),
+      history: buildUmlHistoryState(updated),
     });
   } catch (error) {
     console.error('Error redoing UML from chat:', error);
