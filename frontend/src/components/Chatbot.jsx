@@ -24,11 +24,16 @@ import { useSession } from '../context/SessionContext';
 import { apiUrl } from '../../api/index.jsx';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import UmlSuggestionModal from "./UmlSuggestionModal.jsx";
 
 const Chatbot = () => {
   const { sessionId, setSessionId, scratchpadText, messages, setMessages } = useSession();
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isUmlProposalLoadingIndex, setIsUmlProposalLoadingIndex] = useState(null);
+  const [umlProposal, setUmlProposal] = useState(null); // { currentPlantUml, proposedPlantUml, messageIndex }
+  const [isUmlModalOpen, setIsUmlModalOpen] = useState(false);
+  const [isAcceptingUml, setIsAcceptingUml] = useState(false);
   const [feedback, setFeedback] = useState({}); // { messageIndex: 'positive' | 'negative' }
   const [nudgeMessageIndex, setNudgeMessageIndex] = useState(null);
   const [nudgeId, setNudgeId] = useState(null);
@@ -395,7 +400,37 @@ const Chatbot = () => {
     });
   };
 
-  const handleUpdateUmlFromChat = async () => {
+  const ensureRealSessionId = async () => {
+    let currentSessionId = sessionId;
+
+    if (!currentSessionId) {
+      try {
+        const newSessionId = await sessionApi.createSession({
+          metadata: {
+            userAgent: navigator.userAgent,
+            deviceType: /Mobile|Android|iPhone|iPad/.test(navigator.userAgent) ? 'mobile' : 'desktop',
+          },
+        });
+        currentSessionId = newSessionId;
+        setSessionId(newSessionId);
+      } catch (error) {
+        console.error("Failed to create session:", error);
+        toast({
+          title: "Unable to create session",
+          description: "UML updates require a session; try again in a moment.",
+          status: "error",
+          duration: 3000,
+          isClosable: true,
+          position: "top",
+        });
+        return null;
+      }
+    }
+
+    return currentSessionId;
+  };
+
+  const handleProposeUmlFromChat = async (messageIndex) => {
     if (!messages || messages.length === 0) {
       toast({
         title: "No messages yet",
@@ -408,86 +443,46 @@ const Chatbot = () => {
       return;
     }
 
-    let currentSessionId = sessionId;
-
-    // Ensure we have a real session (similar flow to sendMessage)
-    if (!currentSessionId) {
-      try {
-        const newSession = await sessionApi.createSession({
-          metadata: {
-            userAgent: navigator.userAgent,
-            deviceType: /Mobile|Android|iPhone|iPad/.test(navigator.userAgent) ? 'mobile' : 'desktop',
-          },
-        });
-        currentSessionId = newSession.sessionId || newSession;
-        setSessionId(currentSessionId);
-      } catch (error) {
-        console.error("Failed to create session for UML update:", error);
-        toast({
-          title: "Unable to create session",
-          description: "UML updates require a session; try again in a moment.",
-          status: "error",
-          duration: 3000,
-          isClosable: true,
-          position: "top",
-        });
-        return;
-      }
-    }
+    const currentSessionId = await ensureRealSessionId();
+    if (!currentSessionId) return;
 
     try {
-      const response = await fetch(apiUrl("/api/uml/from-chat"), {
+      setIsUmlProposalLoadingIndex(messageIndex);
+
+      const response = await fetch(apiUrl("/api/uml/from-chat/propose"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           sessionId: currentSessionId,
           messages,
+          messageIndex,
         }),
       });
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || "Failed to update UML from chat");
+        throw new Error(errorData.error || "Failed to propose UML from chat");
       }
 
       const data = await response.json();
-      const { plantuml, svg } = data;
-
-      if (plantuml) {
-        // Persist PlantUML so PlantUmlTab can pick it up
-        sessionStorage.setItem("plantuml_code", plantuml);
-        // Optional: notify other components that PlantUML has been updated
-        window.dispatchEvent(new Event("plantuml_updated"));
-      }
-
-      // Optionally append an inline UML checkpoint message with SVG preview
-      if (svg) {
-        const checkpointMessage = {
-          role: "assistant",
-          content: "UML diagram checkpoint updated from the conversation.",
-          umlSvg: svg,
-        };
-        setMessages((prev) => [...prev, checkpointMessage]);
-      }
-
-      toast({
-        title: "UML updated",
-        description: "The UML diagram has been updated based on the conversation.",
-        status: "success",
-        duration: 2500,
-        isClosable: true,
-        position: "top",
+      setUmlProposal({
+        currentPlantUml: data.currentPlantUml,
+        proposedPlantUml: data.proposedPlantUml,
+        messageIndex,
       });
+      setIsUmlModalOpen(true);
     } catch (error) {
-      console.error("Error updating UML from chat:", error);
+      console.error("Error proposing UML from chat:", error);
       toast({
-        title: "Failed to update UML",
-        description: error.message || "An error occurred while updating the diagram.",
+        title: "Failed to propose UML",
+        description: error.message || "An error occurred while preparing UML changes.",
         status: "error",
         duration: 3000,
         isClosable: true,
         position: "top",
       });
+    } finally {
+      setIsUmlProposalLoadingIndex(null);
     }
   };
 
@@ -500,14 +495,6 @@ const Chatbot = () => {
               Chat
             </Text>
             <HStack spacing={2}>
-              <Button
-                colorScheme="purple"
-                variant="outline"
-                size="sm"
-                onClick={handleUpdateUmlFromChat}
-              >
-                Update UML from chat
-              </Button>
               <Button leftIcon={<FaTrash />} colorScheme="red" variant="outline" size="sm" onClick={handleClearChat}>
                 Clear
               </Button>
@@ -661,6 +648,17 @@ const Chatbot = () => {
                       p={1}
                     />
                   </Tooltip>
+                  <Tooltip label="Update UML from this chat" hasArrow>
+                    <Button
+                      size="xs"
+                      variant="ghost"
+                      colorScheme="purple"
+                      onClick={() => handleProposeUmlFromChat(index)}
+                      isLoading={isUmlProposalLoadingIndex === index}
+                    >
+                      Update UML
+                    </Button>
+                  </Tooltip>
                 </HStack>
               )}
             </Box>
@@ -668,6 +666,71 @@ const Chatbot = () => {
           {/* Invisible element to scroll to */}
           <div ref={messagesEndRef} />
         </VStack>
+        {umlProposal && (
+          <UmlSuggestionModal
+            isOpen={isUmlModalOpen}
+            onClose={() => setIsUmlModalOpen(false)}
+            currentPlantUml={umlProposal.currentPlantUml}
+            proposedPlantUml={umlProposal.proposedPlantUml}
+            onAccept={async () => {
+              if (!umlProposal || !umlProposal.proposedPlantUml) return;
+
+              const currentSessionId = await ensureRealSessionId();
+              if (!currentSessionId) return;
+
+              try {
+                setIsAcceptingUml(true);
+                const response = await fetch(apiUrl("/api/uml/from-chat/accept"), {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    sessionId: currentSessionId,
+                    proposedPlantUml: umlProposal.proposedPlantUml,
+                    messageIndex: umlProposal.messageIndex,
+                    summary: "Accepted UML update from chat",
+                  }),
+                });
+
+                if (!response.ok) {
+                  const errorData = await response.json().catch(() => ({}));
+                  throw new Error(errorData.error || "Failed to accept UML changes");
+                }
+
+                const data = await response.json();
+                const updatedPlantuml = data.plantuml;
+
+                if (updatedPlantuml) {
+                  sessionStorage.setItem("plantuml_code", updatedPlantuml);
+                  window.dispatchEvent(new Event("plantuml_updated"));
+                }
+
+                setIsUmlModalOpen(false);
+
+                toast({
+                  title: "UML updated",
+                  description: "The UML diagram has been updated with the accepted changes.",
+                  status: "success",
+                  duration: 2500,
+                  isClosable: true,
+                  position: "top",
+                });
+              } catch (error) {
+                console.error("Error accepting UML changes:", error);
+                toast({
+                  title: "Failed to accept UML changes",
+                  description: error.message || "An error occurred while applying UML changes.",
+                  status: "error",
+                  duration: 3000,
+                  isClosable: true,
+                  position: "top",
+                });
+              } finally {
+                setIsAcceptingUml(false);
+              }
+            }}
+            isAccepting={isAcceptingUml}
+          />
+        )}
         {/* Input area */}
         <HStack px={6} pb={6} pt={6} spacing={3} bg="#F6F8FA" flexShrink={0}>
           <Tooltip label="Spin for nudge" hasArrow>
