@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
-import { Box, Textarea, Spinner, Center, Text, HStack, IconButton, useToast } from "@chakra-ui/react";
+import { Box, Textarea, Spinner, Center, Text, HStack, IconButton, useToast, Button } from "@chakra-ui/react";
 import { EditIcon, ViewIcon } from "@chakra-ui/icons";
 import { apiUrl } from "../../api/index.jsx";
+import { useSession } from "../context/SessionContext";
 
 const DEFAULT_PLANTUML = `@startuml
 start
@@ -15,7 +16,11 @@ const PlantUmlTab = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [diagramSvg, setDiagramSvg] = useState(null);
   const [error, setError] = useState(null);
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
+  const [isUndoRedoLoading, setIsUndoRedoLoading] = useState(false);
   const toast = useToast();
+  const { sessionId } = useSession();
 
   // load from sessionStorage on mount
   useEffect(() => {
@@ -23,6 +28,42 @@ const PlantUmlTab = () => {
     if (stored) {
       setPlantUmlCode(stored);
     }
+
+    const historyRaw = sessionStorage.getItem('plantuml_history_state');
+    if (historyRaw) {
+      try {
+        const history = JSON.parse(historyRaw);
+        setCanUndo(!!history.canUndo);
+        setCanRedo(!!history.canRedo);
+      } catch (e) {
+        console.error("Failed to parse plantuml_history_state:", e);
+      }
+    }
+
+    // Listen for external updates (e.g., from Chatbot)
+    const handleUpdated = () => {
+      const latest = sessionStorage.getItem('plantuml_code');
+      if (latest) {
+        setPlantUmlCode(latest);
+      }
+
+      const historyRaw = sessionStorage.getItem('plantuml_history_state');
+      if (historyRaw) {
+        try {
+          const history = JSON.parse(historyRaw);
+          setCanUndo(!!history.canUndo);
+          setCanRedo(!!history.canRedo);
+        } catch (e) {
+          console.error("Failed to parse plantuml_history_state on update:", e);
+        }
+      }
+    };
+
+    window.addEventListener('plantuml_updated', handleUpdated);
+
+    return () => {
+      window.removeEventListener('plantuml_updated', handleUpdated);
+    };
   }, []);
 
   // save to sessionStorage whenever code changes
@@ -79,6 +120,74 @@ const PlantUmlTab = () => {
     }
   };
 
+  const handleHistoryAction = async (action) => {
+    if (!sessionId) {
+      toast({
+        title: "No active session",
+        description: "Undo/redo requires an active session with UML history.",
+        status: "info",
+        duration: 2500,
+        isClosable: true,
+        position: "top",
+      });
+      return;
+    }
+
+    try {
+      setIsUndoRedoLoading(true);
+      const endpoint =
+        action === "undo" ? "/api/uml/from-chat/undo" : "/api/uml/from-chat/redo";
+
+      const response = await fetch(apiUrl(endpoint), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Failed to ${action} UML revision`);
+      }
+
+      const data = await response.json();
+      const updated = data.plantuml;
+      const history = data.history || {};
+
+      if (updated) {
+        setPlantUmlCode(updated);
+        sessionStorage.setItem("plantuml_code", updated);
+      }
+
+      sessionStorage.setItem(
+        "plantuml_history_state",
+        JSON.stringify({
+          canUndo: !!history.canUndo,
+          canRedo: !!history.canRedo,
+          hasHistory: !!history.hasHistory,
+          revisionIndex:
+            typeof history.revisionIndex === "number" ? history.revisionIndex : -1,
+        })
+      );
+
+      // Notify any listeners (e.g., other tabs) that UML/history changed
+      window.dispatchEvent(new Event("plantuml_updated"));
+
+      setCanUndo(!!history.canUndo);
+      setCanRedo(!!history.canRedo);
+    } catch (err) {
+      console.error(`Error during UML ${action}:`, err);
+      toast({
+        title: `Failed to ${action}`,
+        description: err.message || `Unable to ${action} UML revision`,
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+      });
+    } finally {
+      setIsUndoRedoLoading(false);
+    }
+  };
+
   const handleToggleEdit = () => {
     if (isEditMode) {
       // switching from edit to view - render the diagram
@@ -104,17 +213,39 @@ const PlantUmlTab = () => {
     <Box display="flex" flexDirection="column" height="100%" overflow="hidden" bg="white">
       {/* toolbar */}
       <Box flexShrink={0} p={2} borderBottom="1px" borderColor="gray.200">
-        <HStack spacing={2} justify="space-between">
+        <HStack spacing={3} justify="space-between">
           <Text fontWeight="semibold" fontSize="sm" color="gray.700">
             {isEditMode ? "Edit PlantUML Code" : "UML Diagram"}
           </Text>
-          <IconButton
-            icon={isEditMode ? <ViewIcon /> : <EditIcon />}
-            onClick={handleToggleEdit}
-            size="sm"
-            aria-label={isEditMode ? "View Diagram" : "Edit Code"}
-            variant="ghost"
-          />
+          <HStack spacing={2}>
+            {!isEditMode && (
+              <>
+                <Button
+                  size="xs"
+                  variant="outline"
+                  onClick={() => handleHistoryAction("undo")}
+                  isDisabled={!canUndo || isUndoRedoLoading}
+                >
+                  Undo
+                </Button>
+                <Button
+                  size="xs"
+                  variant="outline"
+                  onClick={() => handleHistoryAction("redo")}
+                  isDisabled={!canRedo || isUndoRedoLoading}
+                >
+                  Redo
+                </Button>
+              </>
+            )}
+            <IconButton
+              icon={isEditMode ? <ViewIcon /> : <EditIcon />}
+              onClick={handleToggleEdit}
+              size="sm"
+              aria-label={isEditMode ? "View Diagram" : "Edit Code"}
+              variant="ghost"
+            />
+          </HStack>
         </HStack>
       </Box>
 

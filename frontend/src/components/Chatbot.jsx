@@ -24,11 +24,16 @@ import { useSession } from '../context/SessionContext';
 import { apiUrl } from '../../api/index.jsx';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import UmlSuggestionModal from "./UmlSuggestionModal.jsx";
 
 const Chatbot = () => {
   const { sessionId, setSessionId, scratchpadText, messages, setMessages } = useSession();
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isUmlProposalLoadingIndex, setIsUmlProposalLoadingIndex] = useState(null);
+  const [umlProposal, setUmlProposal] = useState(null); // { currentPlantUml, proposedPlantUml, messageIndex }
+  const [isUmlModalOpen, setIsUmlModalOpen] = useState(false);
+  const [isAcceptingUml, setIsAcceptingUml] = useState(false);
   const [feedback, setFeedback] = useState({}); // { messageIndex: 'positive' | 'negative' }
   const [nudgeMessageIndex, setNudgeMessageIndex] = useState(null);
   const [nudgeId, setNudgeId] = useState(null);
@@ -395,6 +400,92 @@ const Chatbot = () => {
     });
   };
 
+  const ensureRealSessionId = async () => {
+    let currentSessionId = sessionId;
+
+    if (!currentSessionId) {
+      try {
+        const newSessionId = await sessionApi.createSession({
+          metadata: {
+            userAgent: navigator.userAgent,
+            deviceType: /Mobile|Android|iPhone|iPad/.test(navigator.userAgent) ? 'mobile' : 'desktop',
+          },
+        });
+        currentSessionId = newSessionId;
+        setSessionId(newSessionId);
+      } catch (error) {
+        console.error("Failed to create session:", error);
+        toast({
+          title: "Unable to create session",
+          description: "UML updates require a session; try again in a moment.",
+          status: "error",
+          duration: 3000,
+          isClosable: true,
+          position: "top",
+        });
+        return null;
+      }
+    }
+
+    return currentSessionId;
+  };
+
+  const handleProposeUmlFromChat = async (messageIndex) => {
+    if (!messages || messages.length === 0) {
+      toast({
+        title: "No messages yet",
+        description: "Start a conversation before updating the UML diagram.",
+        status: "info",
+        duration: 2500,
+        isClosable: true,
+        position: "top",
+      });
+      return;
+    }
+
+    const currentSessionId = await ensureRealSessionId();
+    if (!currentSessionId) return;
+
+    try {
+      setIsUmlProposalLoadingIndex(messageIndex);
+
+      const response = await fetch(apiUrl("/api/uml/from-chat/propose"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: currentSessionId,
+          messages,
+          messageIndex,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to propose UML from chat");
+      }
+
+      const data = await response.json();
+      setUmlProposal({
+        currentPlantUml: data.currentPlantUml,
+        proposedPlantUml: data.proposedPlantUml,
+        messageIndex,
+      });
+      setIsUmlModalOpen(true);
+    } catch (error) {
+      console.error("Error proposing UML from chat:", error);
+      toast({
+        title: "Failed to propose UML",
+        description: error.message || "An error occurred while preparing UML changes.",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+        position: "top",
+      });
+    } finally {
+      setIsUmlProposalLoadingIndex(null);
+    }
+  };
+
   return (
     <Box display="flex" flexDirection="column" height="100%" width="100%" bg="#F6F8FA" position="relative" overflow="hidden">
       <Box display="flex" position="relative" zIndex={2} flexShrink={0}>
@@ -463,7 +554,29 @@ const Chatbot = () => {
                 ml={message.role === "assistant" ? 0 : "auto"}
                 mr={message.role === "user" ? 0 : "auto"}
               >
-                {message.role === "assistant" ? renderMarkdown(message.content) : message.content}
+                {message.role === "assistant" ? (
+                  <>
+                    {renderMarkdown(message.content)}
+                    {message.umlSvg && (
+                      <Box
+                        mt={3}
+                        borderRadius="md"
+                        overflow="hidden"
+                        bg="white"
+                        border="1px solid"
+                        borderColor="gray.200"
+                        p={2}
+                      >
+                        <Box
+                          as="div"
+                          dangerouslySetInnerHTML={{ __html: message.umlSvg }}
+                        />
+                      </Box>
+                    )}
+                  </>
+                ) : (
+                  message.content
+                )}
                 <Tooltip label="Copy" hasArrow>
                   <IconButton
                     icon={<FaRegCopy />}
@@ -535,6 +648,17 @@ const Chatbot = () => {
                       p={1}
                     />
                   </Tooltip>
+                  <Tooltip label="Update UML from this chat" hasArrow>
+                    <Button
+                      size="xs"
+                      variant="ghost"
+                      colorScheme="purple"
+                      onClick={() => handleProposeUmlFromChat(index)}
+                      isLoading={isUmlProposalLoadingIndex === index}
+                    >
+                      Update UML
+                    </Button>
+                  </Tooltip>
                 </HStack>
               )}
             </Box>
@@ -542,6 +666,86 @@ const Chatbot = () => {
           {/* Invisible element to scroll to */}
           <div ref={messagesEndRef} />
         </VStack>
+        {umlProposal && (
+          <UmlSuggestionModal
+            isOpen={isUmlModalOpen}
+            onClose={() => setIsUmlModalOpen(false)}
+            currentPlantUml={umlProposal.currentPlantUml}
+            proposedPlantUml={umlProposal.proposedPlantUml}
+            onAccept={async () => {
+              if (!umlProposal || !umlProposal.proposedPlantUml) return;
+
+              const currentSessionId = await ensureRealSessionId();
+              if (!currentSessionId) return;
+
+              try {
+                setIsAcceptingUml(true);
+                const response = await fetch(apiUrl("/api/uml/from-chat/accept"), {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    sessionId: currentSessionId,
+                    proposedPlantUml: umlProposal.proposedPlantUml,
+                    messageIndex: umlProposal.messageIndex,
+                    summary: "Accepted UML update from chat",
+                  }),
+                });
+
+                if (!response.ok) {
+                  const errorData = await response.json().catch(() => ({}));
+                  throw new Error(errorData.error || "Failed to accept UML changes");
+                }
+
+                const data = await response.json();
+                const updatedPlantuml = data.plantuml;
+                const history = data.history || {};
+
+                if (updatedPlantuml) {
+                  sessionStorage.setItem("plantuml_code", updatedPlantuml);
+                }
+
+                // Persist latest UML history state so PlantUmlTab can pick it up
+                sessionStorage.setItem(
+                  "plantuml_history_state",
+                  JSON.stringify({
+                    canUndo: !!history.canUndo,
+                    canRedo: !!history.canRedo,
+                    hasHistory: !!history.hasHistory,
+                    revisionIndex:
+                      typeof history.revisionIndex === "number" ? history.revisionIndex : -1,
+                  })
+                );
+
+                // Notify other components (e.g., PlantUmlTab) that UML + history changed
+                window.dispatchEvent(new Event("plantuml_updated"));
+
+                setIsUmlModalOpen(false);
+
+                toast({
+                  title: "UML updated",
+                  description: "The UML diagram has been updated with the accepted changes.",
+                  status: "success",
+                  duration: 2500,
+                  isClosable: true,
+                  position: "top",
+                });
+              } catch (error) {
+                console.error("Error accepting UML changes:", error);
+                toast({
+                  title: "Failed to accept UML changes",
+                  description: error.message || "An error occurred while applying UML changes.",
+                  status: "error",
+                  duration: 3000,
+                  isClosable: true,
+                  position: "top",
+                });
+              } finally {
+                setIsAcceptingUml(false);
+              }
+            }}
+            isAccepting={isAcceptingUml}
+          />
+        )}
         {/* Input area */}
         <HStack px={6} pb={6} pt={6} spacing={3} bg="#F6F8FA" flexShrink={0}>
           <Tooltip label="Spin for nudge" hasArrow>

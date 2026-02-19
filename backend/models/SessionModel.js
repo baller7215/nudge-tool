@@ -34,6 +34,20 @@ const scratchpadSnapshotSchema = new mongoose.Schema({
   timestamp: { type: Date, default: Date.now }
 });
 
+const umlStateSchema = new mongoose.Schema({
+  umlType: { type: String, enum: ['class', 'sequence', 'other'], default: 'class' },
+  plantumlCode: { type: String },
+  lastUpdatedAt: { type: Date, default: Date.now }
+});
+
+const umlRevisionSchema = new mongoose.Schema({
+  revisionIndex: { type: Number, required: true },
+  plantumlCode: { type: String, required: true },
+  createdAt: { type: Date, default: Date.now },
+  createdByMessageIndex: { type: Number },
+  summary: { type: String },
+});
+
 const sessionSchema = new mongoose.Schema({
   sessionId: { type: String, required: true, unique: true },
   userId: { type: String }, // Optional - for future user authentication
@@ -72,7 +86,10 @@ const sessionSchema = new mongoose.Schema({
     ipAddress: { type: String },
     deviceType: { type: String }
   },
-  scratchpadSnapshots: [scratchpadSnapshotSchema]
+  scratchpadSnapshots: [scratchpadSnapshotSchema],
+  umlState: umlStateSchema,
+  umlRevisions: [umlRevisionSchema],
+  currentUmlRevisionIndex: { type: Number, default: -1 }
 }, {
   timestamps: true
 });
@@ -197,6 +214,130 @@ sessionSchema.statics.createSession = function(sessionData = {}) {
     sessionId,
     ...sessionData
   });
+};
+
+// method to upsert UML state for the session
+sessionSchema.methods.setUmlState = function(umlData) {
+  this.umlState = {
+    ...(this.umlState ? this.umlState.toObject() : {}),
+    ...umlData,
+    lastUpdatedAt: new Date()
+  };
+  return this.save();
+};
+
+// method to get UML state with sensible defaults
+sessionSchema.methods.getUmlState = function() {
+  if (!this.umlState || !this.umlState.plantumlCode) {
+    return {
+      umlType: 'class',
+      plantumlCode: '@startuml\n@enduml',
+      lastUpdatedAt: this.umlState?.lastUpdatedAt || this.startTime || new Date()
+    };
+  }
+  return this.umlState;
+};
+
+// method to append a UML revision and update pointers
+sessionSchema.methods.addUmlRevision = function({ plantumlCode, messageIndex, summary }) {
+  if (!plantumlCode) {
+    throw new Error('plantumlCode is required to add a UML revision');
+  }
+
+  const nextIndex =
+    typeof this.currentUmlRevisionIndex === 'number' && this.currentUmlRevisionIndex >= 0
+      ? this.currentUmlRevisionIndex + 1
+      : 0;
+
+  // If we are in the middle of the timeline (after an undo),
+  // drop any \"future\" revisions before appending a new one.
+  if (Array.isArray(this.umlRevisions) && this.umlRevisions.length > 0) {
+    this.umlRevisions = this.umlRevisions.filter(
+      (rev) => rev.revisionIndex <= this.currentUmlRevisionIndex
+    );
+  }
+
+  this.umlRevisions.push({
+    revisionIndex: nextIndex,
+    plantumlCode,
+    createdAt: new Date(),
+    createdByMessageIndex: typeof messageIndex === 'number' ? messageIndex : undefined,
+    summary,
+  });
+
+  this.currentUmlRevisionIndex = nextIndex;
+
+  // Keep umlState in sync with the latest revision
+  this.umlState = {
+    ...(this.umlState ? this.umlState.toObject() : {}),
+    umlType: 'class',
+    plantumlCode,
+    lastUpdatedAt: new Date(),
+  };
+
+  return this.save();
+};
+
+sessionSchema.methods.canUndoUml = function() {
+  return typeof this.currentUmlRevisionIndex === 'number' && this.currentUmlRevisionIndex > 0;
+};
+
+sessionSchema.methods.canRedoUml = function() {
+  if (!Array.isArray(this.umlRevisions) || this.umlRevisions.length === 0) return false;
+  if (typeof this.currentUmlRevisionIndex !== 'number') return false;
+
+  const maxIndex = Math.max(...this.umlRevisions.map((rev) => rev.revisionIndex));
+  return this.currentUmlRevisionIndex < maxIndex;
+};
+
+sessionSchema.methods.undoUmlRevision = function() {
+  if (!this.canUndoUml()) {
+    throw new Error('No UML undo available');
+  }
+
+  const targetIndex = this.currentUmlRevisionIndex - 1;
+  const targetRevision = (this.umlRevisions || []).find(
+    (rev) => rev.revisionIndex === targetIndex
+  );
+
+  if (!targetRevision) {
+    throw new Error('Target UML revision not found for undo');
+  }
+
+  this.currentUmlRevisionIndex = targetIndex;
+  this.umlState = {
+    ...(this.umlState ? this.umlState.toObject() : {}),
+    umlType: 'class',
+    plantumlCode: targetRevision.plantumlCode,
+    lastUpdatedAt: new Date(),
+  };
+
+  return this.save();
+};
+
+sessionSchema.methods.redoUmlRevision = function() {
+  if (!this.canRedoUml()) {
+    throw new Error('No UML redo available');
+  }
+
+  const targetIndex = this.currentUmlRevisionIndex + 1;
+  const targetRevision = (this.umlRevisions || []).find(
+    (rev) => rev.revisionIndex === targetIndex
+  );
+
+  if (!targetRevision) {
+    throw new Error('Target UML revision not found for redo');
+  }
+
+  this.currentUmlRevisionIndex = targetIndex;
+  this.umlState = {
+    ...(this.umlState ? this.umlState.toObject() : {}),
+    umlType: 'class',
+    plantumlCode: targetRevision.plantumlCode,
+    lastUpdatedAt: new Date(),
+  };
+
+  return this.save();
 };
 
 export const Session = mongoose.model('Session', sessionSchema); 

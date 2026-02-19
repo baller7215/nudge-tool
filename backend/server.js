@@ -5,6 +5,7 @@ import chatRoutes from "./routes/chatRoutes.js";
 import nudgeRoutes from "./routes/nudgeRoutes.js";
 import sessionRoutes from "./routes/sessionRoutes.js";
 import plantumlRoutes from "./routes/plantumlRoutes.js";
+import umlRoutes from "./routes/umlRoutes.js";
 import cors from "cors";
 import session from "express-session";
 import passport from "passport";
@@ -81,6 +82,7 @@ app.use("/api", chatRoutes);
 app.use("/api", nudgeRoutes);
 app.use("/api/session", sessionRoutes);
 app.use("/api/plantuml", plantumlRoutes);
+app.use("/api", umlRoutes);
 
 app.get("/", (req, res) => {
     res.send("Server is ready");
