@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Box, Tab, TabList, TabPanel, TabPanels, Tabs } from "@chakra-ui/react";
 import CardHistory from "./CardHistory";
+import ExpandableCards from "./ExpandableCards";
+import CardControls from "./CardControls";
 import { useSession } from "../context/SessionContext";
 import ScratchpadTab from "./ScratchpadTab";
 import PlantUmlTab from "./PlantUmlTab";
@@ -73,62 +75,73 @@ const TextScratchpad = ({ sessionId }) => {
         position="relative"
         overflow="hidden"
       >
-        <Tabs
-          variant="enclosed"
-          flex="1"
-          minHeight={0}
-          display="flex"
-          flexDirection="column"
-          onChange={handleTabChange}
-          height="100%"
-        >
-          <TabList flexShrink={0}>
-            <Tab as="h2" fontWeight="bold"
-            fontSize="lg"
-            color="gray.800"
-            cursor="pointer">UML</Tab>
+        <Box flex="1" minHeight={0} display="flex" flexDirection="column" overflow="hidden">
+          <Tabs
+            variant="enclosed"
+            flex="1"
+            minHeight={0}
+            display="flex"
+            flexDirection="column"
+            onChange={handleTabChange}
+            height="100%"
+          >
+            <TabList flexShrink={0}>
+              <Tab as="h2" fontWeight="bold"
+              fontSize="lg"
+              color="gray.800"
+              cursor="pointer">UML</Tab>
 
-            <Tab as="h2" fontWeight="bold"
-            fontSize="lg"
-            color="gray.800"
-            cursor="pointer">Scratchpad</Tab>
-            
-            <Tab as="h2" fontWeight="bold"
-            fontSize="lg"
-            color="gray.800"
-            cursor="pointer">History</Tab>
-           
-          </TabList>
-          
-          
+              <Tab as="h2" fontWeight="bold"
+              fontSize="lg"
+              color="gray.800"
+              cursor="pointer">Scratchpad</Tab>
 
-          <TabPanels flex="1" minHeight={0} display="flex" flexDirection="column" overflow="hidden">
-            <TabPanel flex="1" minHeight={0} display="flex" flexDirection="column" p={0} position="relative" overflow="hidden">
-              <PlantUmlTab />
-            </TabPanel>
-            <TabPanel flex="1" minHeight={0} display="flex" flexDirection="column" p={0} position="relative" overflow="hidden">
-              <ScratchpadTab
-                sessionId={sessionId}
+              <Tab as="h2" fontWeight="bold"
+              fontSize="lg"
+              color="gray.800"
+              cursor="pointer">History</Tab>
+
+            </TabList>
+
+            <TabPanels flex="1" minHeight={0} display="flex" flexDirection="column" overflow="hidden">
+              <TabPanel flex="1" minHeight={0} display="flex" flexDirection="column" p={0} position="relative" overflow="hidden">
+                <PlantUmlTab />
+              </TabPanel>
+              <TabPanel flex="1" minHeight={0} display="flex" flexDirection="column" p={0} position="relative" overflow="hidden">
+                <ScratchpadTab />
+              </TabPanel>
+
+              <TabPanel flex="1" p={0} overflow="hidden" height="100%">
+                <Box height="100%" overflow="auto">
+                  <CardHistory sessionId={sessionId} shouldRefresh={activeTab === 2} />
+                </Box>
+              </TabPanel>
+            </TabPanels>
+          </Tabs>
+
+          {/* Shared nudge panel – visible for both UML and Scratchpad tabs */}
+          {activeTab < 2 && (
+            <Box flexShrink={0} borderTop="1px" borderColor="gray.200" bg="white">
+              {showCards && (
+                <ExpandableCards
+                  sessionId={sessionId}
+                  onCardCountChange={handleCardCountChange}
+                  onCardsChange={handleCardsChange}
+                  cards={cards}
+                  spawnTrigger={spawnTrigger}
+                />
+              )}
+              <CardControls
                 showCards={showCards}
-                setShowCards={setShowCards}
-                cards={cards}
-                onCardsChange={handleCardsChange}
+                onToggleShowCards={() => setShowCards((v) => !v)}
                 cardCount={cardCount}
-                onCardCountChange={handleCardCountChange}
-                spawnTrigger={spawnTrigger}
                 spawnFrequency={spawnFrequency}
-                setSpawnFrequency={setSpawnFrequency}
+                onChangeSpawnFrequency={setSpawnFrequency}
                 hasSession={!!contextSessionId}
               />
-            </TabPanel>
-
-            <TabPanel flex="1" p={0} overflow="hidden" height="100%">
-              <Box height="100%" overflow="auto">
-                <CardHistory sessionId={sessionId} shouldRefresh={activeTab === 2} />
-              </Box>
-            </TabPanel>
-          </TabPanels>
-        </Tabs>
+            </Box>
+          )}
+        </Box>
       </Box>
     </Box>
   );

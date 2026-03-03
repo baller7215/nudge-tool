@@ -1,22 +1,8 @@
 import React from "react";
 import { Box, Textarea } from "@chakra-ui/react";
-import ExpandableCards from "./ExpandableCards";
-import CardControls from "./CardControls";
 import { useSession } from "../context/SessionContext";
 
-const ScratchpadTab = ({
-  sessionId,
-  showCards,
-  setShowCards,
-  cards,
-  onCardsChange,
-  cardCount,
-  onCardCountChange,
-  spawnTrigger,
-  spawnFrequency,
-  setSpawnFrequency,
-  hasSession,
-}) => {
+const ScratchpadTab = () => {
   const { sessionId: contextSessionId, setSessionId, scratchpadText, setScratchpadText } = useSession();
 
   const handleScratchpadChange = async (e) => {
@@ -59,25 +45,6 @@ const ScratchpadTab = ({
           p={0}
         />
       </Box>
-      {showCards && (
-        <Box flexShrink={0} mt={2}>
-          <ExpandableCards
-            sessionId={sessionId}
-            onCardCountChange={onCardCountChange}
-            onCardsChange={onCardsChange}
-            cards={cards}
-            spawnTrigger={spawnTrigger}
-          />
-        </Box>
-      )}
-      <CardControls
-        showCards={showCards}
-        onToggleShowCards={() => setShowCards((v) => !v)}
-        cardCount={cardCount}
-        spawnFrequency={spawnFrequency}
-        onChangeSpawnFrequency={setSpawnFrequency}
-        hasSession={hasSession}
-      />
     </Box>
   );
 };
