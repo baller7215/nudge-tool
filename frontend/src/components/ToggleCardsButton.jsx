@@ -1,6 +1,6 @@
 import React from "react";
 import { Button, Badge } from "@chakra-ui/react";
-import { FiChevronsRight, FiChevronsLeft } from "react-icons/fi";
+import { FiChevronsRight, FiChevronsLeft, FiChevronsUp, FiChevronsDown } from "react-icons/fi";
 
 const ToggleCardsButton = ({ show, count, onClick }) => (
   <Button
@@ -15,11 +15,11 @@ const ToggleCardsButton = ({ show, count, onClick }) => (
     position="relative"
     _hover={{ boxShadow: "lg", bg: "gray.50" }}
   >
-    {show ? <FiChevronsRight size={28} /> : <FiChevronsLeft size={28} />}
+    {show ? <FiChevronsDown size={28} /> : <FiChevronsUp size={28} />}
     <Badge
       position="absolute"
-      top={1}
-      right={1}
+      top={-1}
+      right={-1}
       bg="#FFD8E4"
       color="black"
       borderRadius="full"
