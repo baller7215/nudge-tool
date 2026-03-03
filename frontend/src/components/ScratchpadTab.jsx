@@ -8,6 +8,11 @@ const ScratchpadTab = () => {
   const handleScratchpadChange = async (e) => {
     const newText = e.target.value;
     setScratchpadText(newText);
+    try {
+      window.dispatchEvent(new Event("scratchpad_updated"));
+    } catch (err) {
+      console.error("Failed to dispatch scratchpad_updated event:", err);
+    }
 
     if (!contextSessionId && newText.length > 0) {
       try {

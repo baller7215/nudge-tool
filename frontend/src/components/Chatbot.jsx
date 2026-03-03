@@ -51,6 +51,19 @@ const Chatbot = () => {
     scrollToBottom();
   }, [messages]);
 
+  // Notify nudge system when a regular assistant turn completes
+  useEffect(() => {
+    if (!messages || messages.length === 0) return;
+    const last = messages[messages.length - 1];
+    if (last.role === "assistant" && !last.nudge) {
+      try {
+        window.dispatchEvent(new Event("chat_turn_completed"));
+      } catch (err) {
+        console.error("Failed to dispatch chat_turn_completed event:", err);
+      }
+    }
+  }, [messages]);
+
   // Cleanup session when component unmounts
   useEffect(() => {
     return () => {
@@ -182,14 +195,54 @@ const Chatbot = () => {
     }
     
     try {
-      const url = currentSessionId 
-        ? apiUrl(`/api/random?sessionId=${currentSessionId}`)
-        : apiUrl("/api/random");
-      
-      const response = await fetch(url);
+      const body = {
+        sessionId: currentSessionId || null,
+        scratchpadText,
+        shownNudgeIds: [], // chat-based nudges don't track IDs yet
+        messages: messages.filter((m) => m.role !== "assistant" || !m.nudge),
+        trigger: "manual_chat",
+      };
+
+      const response = await fetch(apiUrl("/api/smart"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
       if (!response.ok) throw new Error("Failed to fetch nudge");
       const data = await response.json();
-      const nudgeMsg = { role: "assistant", content: data.text, nudge: true };
+
+      let nudges = [];
+      if (data && Array.isArray(data.nudges)) {
+        nudges = data.nudges;
+      } else if (data && data.text) {
+        nudges = [
+          {
+            id: data._id,
+            text: data.text,
+            goal: data.goal || "unspecified",
+            topic: data.category || data.topic || "unspecified",
+          },
+        ];
+      }
+
+      if (!nudges.length) {
+        console.log("No nudges returned for manual_chat trigger");
+        return;
+      }
+
+      const first = nudges[0];
+      const nudgeMsg = {
+        role: "assistant",
+        content: first.text,
+        nudge: true,
+        nudgeId: first.id || null,
+        nudgeMeta: {
+          phase: data.phase || null,
+          goal: first.goal || null,
+          topic: first.topic || null,
+        },
+      };
       setMessages((prev) => [...prev, nudgeMsg]);
     } catch (error) {
       console.error("Error fetching nudge:", error);

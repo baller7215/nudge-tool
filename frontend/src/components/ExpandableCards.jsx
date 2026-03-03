@@ -22,12 +22,14 @@ const ExpandableCards = ({ sessionId, onCardCountChange, onCardsChange, cards, s
   const toast = useToast();
   const { scratchpadText, messages } = useSession();
 
+  const MAX_ACTIVE_AUTO_CARDS = 2;
+
   console.log('ExpandableCards sessionId:', sessionId);
 
   // Listen for spawn triggers
   useEffect(() => {
     if (spawnTrigger) {
-      fetchNudges();
+      fetchNudges({ useSmart: true, trigger: 'timer' });
     }
   }, [spawnTrigger]);
 
@@ -47,7 +49,12 @@ const ExpandableCards = ({ sessionId, onCardCountChange, onCardsChange, cards, s
     return true;
   });
 
-  const fetchNudges = async (useSmart = true) => {
+  const fetchNudges = async ({ useSmart = true, trigger = 'timer' } = {}) => {
+    // Basic cap on automatically spawned cards to avoid overwhelm
+    if (trigger !== 'manual_card' && cards.length >= MAX_ACTIVE_AUTO_CARDS) {
+      return;
+    }
+
     setIsLoading(true);
     try {
       // Get list of already-shown nudge IDs to prevent duplicates
@@ -65,7 +72,8 @@ const ExpandableCards = ({ sessionId, onCardCountChange, onCardsChange, cards, s
             sessionId,
             scratchpadText,
             shownNudgeIds, // Send already-shown IDs to backend
-            messages: messages.filter(m => m.role !== 'assistant' || !m.nudge) // Exclude existing nudges from context
+            messages: messages.filter(m => m.role !== 'assistant' || !m.nudge), // Exclude existing nudges from context
+            trigger,
           })
         });
         
@@ -96,16 +104,54 @@ const ExpandableCards = ({ sessionId, onCardCountChange, onCardsChange, cards, s
           attempts++;
         }
       }
-      
-      const newCard = {
-        id: Date.now(),
-        title: data.category || 'Nudge',
-        shortDescription: data.text,
-        fullContent: data.text,
-        nudgeId: data._id,
-      };
-      const newCards = [...cards, newCard];
-      onCardsChange(newCards);
+
+      // Handle LLM-generated nudges array shape first
+      if (data && Array.isArray(data.nudges)) {
+        const generated = data.nudges;
+
+        if (!generated.length) {
+          console.log('No generated nudges returned');
+          return;
+        }
+
+        const now = Date.now();
+        let newCards = [...cards];
+
+        generated.forEach((nudge, idx) => {
+          if (!nudge || !nudge.text) return;
+          if (newCards.length >= MAX_ACTIVE_AUTO_CARDS && trigger !== 'manual_card') {
+            return;
+          }
+
+          const titleSource = nudge.topic || nudge.goal || 'Nudge';
+          const title =
+            titleSource.charAt(0).toUpperCase() + titleSource.slice(1);
+
+          const card = {
+            id: now + idx,
+            title,
+            shortDescription: nudge.text,
+            fullContent: nudge.text,
+            nudgeId: nudge.id || null,
+          };
+          newCards = [...newCards, card];
+        });
+
+        if (newCards.length !== cards.length) {
+          onCardsChange(newCards);
+        }
+      } else if (data && data.text) {
+        // Backwards compatibility with single-nudge response shape
+        const newCard = {
+          id: Date.now(),
+          title: data.category || 'Nudge',
+          shortDescription: data.text,
+          fullContent: data.text,
+          nudgeId: data._id,
+        };
+        const newCards = [...cards, newCard];
+        onCardsChange(newCards);
+      }
     } catch (error) {
       console.error("Error fetching nudge:", error);
       toast({
@@ -163,7 +209,7 @@ const ExpandableCards = ({ sessionId, onCardCountChange, onCardsChange, cards, s
           as="h3"
           colorScheme="pink"
           leftIcon={<Box as="span" fontSize="xl">+</Box>}
-          onClick={() => fetchNudges(true)} // Manual "Add Card" uses smart logic
+          onClick={() => fetchNudges({ useSmart: true, trigger: 'manual_card' })} // Manual "Add Card" uses smart logic
           isLoading={isLoading}
           borderRadius="lg"
           px={4}

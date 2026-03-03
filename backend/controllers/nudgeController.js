@@ -1,6 +1,6 @@
 import { Nudge } from '../models/NudgeModel.js';
 import sessionService from '../services/sessionService.js';
-import { getSmartNudge } from '../services/nudgeService.js';
+import { generateNudges, getSmartNudge } from '../services/nudgeService.js';
 
 export const getRandomNudge = async (req, res) => {
     const { sessionId } = req.query;
@@ -46,25 +46,39 @@ export const getRandomNudge = async (req, res) => {
 };
 
 export const getSmartNudgeRecommendation = async (req, res) => {
-    const { sessionId, scratchpadText, messages, shownNudgeIds } = req.body;
+    const {
+        sessionId,
+        scratchpadText,
+        messages,
+        shownNudgeIds,
+        plantuml,
+        umlSummary,
+        trigger,
+    } = req.body || {};
     
     try {
-        // Get smart nudge recommendation
-        const nudge = await getSmartNudge(
-            scratchpadText || '', 
-            messages || [],
-            shownNudgeIds || []
-        );
+        // generate one or more nudges via LLM
+        const result = await generateNudges({
+            sessionId: sessionId || null,
+            scratchpadText: scratchpadText || '',
+            messages: messages || [],
+            plantuml,
+            umlSummary,
+            trigger: trigger || 'timer',
+        });
+
+        const nudges = Array.isArray(result.nudges) ? result.nudges : [];
 
         // Track in session if sessionId is provided
-        if (sessionId) {
+        if (sessionId && nudges.length > 0) {
             try {
+                const first = nudges[0];
                 await sessionService.addMessage(sessionId, {
                     role: 'assistant',
-                    content: nudge.text,
+                    content: first.text,
                     timestamp: new Date(),
                     isNudge: true,
-                    nudgeId: nudge._id,
+                    nudgeId: first.id || null,
                     responseTime: null,
                     tokensUsed: 0
                 });
@@ -74,7 +88,12 @@ export const getSmartNudgeRecommendation = async (req, res) => {
             }
         }
 
-        res.json(nudge);
+        res.json({
+            nudges,
+            phase: result.phase,
+            trigger: result.trigger,
+            umlSummary: result.umlSummary,
+        });
     } catch (error) {
         console.error('Error getting smart nudge:', error);
         res.status(500).json({ error: 'Failed to get smart nudge' });

@@ -18,6 +18,7 @@ export const useCardSpawning = ({ showCards, sessionId }) => {
 
   const spawnIntervalRef = useRef(null);
   const canSpawnRef = useRef(true);
+  const lastEventTriggerRef = useRef(0);
 
   // Keep ref in sync with state
   useEffect(() => {
@@ -106,6 +107,34 @@ export const useCardSpawning = ({ showCards, sessionId }) => {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [spawnFrequency, showCards]);
+
+  // Event-based triggers from UML, scratchpad, and chat activity
+  useEffect(() => {
+    const MIN_EVENT_INTERVAL_MS = 30000;
+
+    const handleEventTrigger = () => {
+      if (!sessionId) {
+        return;
+      }
+
+      const now = Date.now();
+      if (now - lastEventTriggerRef.current < MIN_EVENT_INTERVAL_MS) {
+        return;
+      }
+      lastEventTriggerRef.current = now;
+
+      if (showCards) {
+        setSpawnTrigger((prev) => prev + 1);
+      }
+    };
+
+    const eventNames = ['plantuml_updated', 'scratchpad_updated', 'chat_turn_completed'];
+    eventNames.forEach((name) => window.addEventListener(name, handleEventTrigger));
+
+    return () => {
+      eventNames.forEach((name) => window.removeEventListener(name, handleEventTrigger));
+    };
+  }, [sessionId, showCards]);
 
   // Cleanup on unmount
   useEffect(() => {

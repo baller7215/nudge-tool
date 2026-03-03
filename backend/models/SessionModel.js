@@ -5,7 +5,7 @@ const messageSchema = new mongoose.Schema({
   content: { type: String, required: true },
   timestamp: { type: Date, default: Date.now },
   isNudge: { type: Boolean, default: false },
-  nudgeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Nudge' },
+  nudgeId: { type: String },
   feedback: { type: String, enum: ['positive', 'negative', null], default: null },
   responseTime: { type: Number }, // in milliseconds
   tokensUsed: { type: Number, default: 0 },
@@ -26,7 +26,7 @@ const cardInteractionSchema = new mongoose.Schema({
   cardContent: { type: String, required: true },
   action: { type: String, enum: ['like', 'dislike', 'neutral'], required: true },
   timestamp: { type: Date, default: Date.now },
-  nudgeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Nudge' }
+  nudgeId: { type: String }
 });
 
 const scratchpadSnapshotSchema = new mongoose.Schema({
