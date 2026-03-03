@@ -197,6 +197,7 @@ export const generateNudges = async ({
   plantuml: providedPlantuml,
   umlSummary: providedUmlSummary,
   trigger = 'timer',
+  avoidTopics = [],
 } = {}) => {
   try {
     let plantuml = providedPlantuml || '';
@@ -290,6 +291,9 @@ ${context}
 Critic focus for this nudge:
 - ${focus}
 
+Avoid repeating these topics if possible:
+- ${(Array.isArray(avoidTopics) && avoidTopics.length > 0) ? avoidTopics.join(', ') : '(none)'}
+
 Now generate your JSON response with 1-3 nudges as specified.
 `.trim();
 
@@ -301,7 +305,23 @@ Now generate your JSON response with 1-3 nudges as specified.
     const completion = await getChatCompletion(gptMessages);
     const raw = completion?.choices?.[0]?.message?.content || '';
 
-    const nudges = parseGeneratedNudges(raw, phase);
+    let nudges = parseGeneratedNudges(raw, phase);
+
+    // Filter out avoided topics if provided (best-effort; fallback if all removed)
+    const avoidSet = new Set(
+      (Array.isArray(avoidTopics) ? avoidTopics : [])
+        .map((t) => String(t).toLowerCase().trim())
+        .filter(Boolean),
+    );
+    if (avoidSet.size > 0) {
+      const filtered = nudges.filter((n) => {
+        const topic = String(n.topic || '').toLowerCase().trim();
+        return !topic || !avoidSet.has(topic);
+      });
+      if (filtered.length > 0) {
+        nudges = filtered;
+      }
+    }
 
     console.log('Generated nudges count', nudges.length);
 

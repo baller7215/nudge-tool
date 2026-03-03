@@ -54,6 +54,7 @@ export const getSmartNudgeRecommendation = async (req, res) => {
         plantuml,
         umlSummary,
         trigger,
+        avoidTopics,
     } = req.body || {};
     
     try {
@@ -65,6 +66,7 @@ export const getSmartNudgeRecommendation = async (req, res) => {
             plantuml,
             umlSummary,
             trigger: trigger || 'timer',
+            avoidTopics: avoidTopics || [],
         });
 
         const nudges = Array.isArray(result.nudges) ? result.nudges : [];

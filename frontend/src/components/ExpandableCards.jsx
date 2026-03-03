@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Box,
   Text,
@@ -22,9 +22,42 @@ const ExpandableCards = ({ sessionId, onCardCountChange, onCardsChange, cards, s
   const toast = useToast();
   const { scratchpadText, messages } = useSession();
 
-  const MAX_ACTIVE_AUTO_CARDS = 2;
+  // Constraints:
+  // - spawn only ONE nudge per trigger
+  // - cap active cards to avoid overwhelm
+  const MAX_ACTIVE_CARDS = 5;
+
+  // Track what we've already shown this session so we don't repeat topics/text.
+  const seenTopicsRef = useRef(new Set());
+  const seenTextHashesRef = useRef(new Set());
+
+  const normalizeText = (text = '') =>
+    String(text)
+      .toLowerCase()
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  const hashText = (text) => {
+    // Simple stable hash for de-duping very similar repeats
+    const s = normalizeText(text);
+    let hash = 5381;
+    for (let i = 0; i < s.length; i++) {
+      hash = (hash * 33) ^ s.charCodeAt(i);
+    }
+    return (hash >>> 0).toString(16);
+  };
 
   console.log('ExpandableCards sessionId:', sessionId);
+
+  // Seed seen sets from existing cards (for hot reload / persistence)
+  useEffect(() => {
+    cards.forEach((c) => {
+      const topic = normalizeText(c.topic || c.title || '');
+      if (topic) seenTopicsRef.current.add(topic);
+      if (c.fullContent) seenTextHashesRef.current.add(hashText(c.fullContent));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Listen for spawn triggers
   useEffect(() => {
@@ -50,8 +83,17 @@ const ExpandableCards = ({ sessionId, onCardCountChange, onCardsChange, cards, s
   });
 
   const fetchNudges = async ({ useSmart = true, trigger = 'timer' } = {}) => {
-    // Basic cap on automatically spawned cards to avoid overwhelm
-    if (trigger !== 'manual_card' && cards.length >= MAX_ACTIVE_AUTO_CARDS) {
+    // Global cap: no more than MAX_ACTIVE_CARDS active at once
+    if (cards.length >= MAX_ACTIVE_CARDS) {
+      if (trigger === 'manual_card') {
+        toast({
+          title: "Too many active nudges",
+          description: "Move a card to history to make room for a new one.",
+          status: "info",
+          duration: 2500,
+          isClosable: true,
+        });
+      }
       return;
     }
 
@@ -65,6 +107,10 @@ const ExpandableCards = ({ sessionId, onCardCountChange, onCardsChange, cards, s
       if (useSmart && sessionId && (scratchpadText || messages.length > 0)) {
         // Use smart nudge API with context
         console.log('Fetching smart nudge with context');
+
+        // Ask backend to avoid repeating topics we've already shown
+        const avoidTopics = Array.from(seenTopicsRef.current).slice(-20);
+
         const response = await fetch(apiUrl('/api/smart'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -74,6 +120,7 @@ const ExpandableCards = ({ sessionId, onCardCountChange, onCardsChange, cards, s
             shownNudgeIds, // Send already-shown IDs to backend
             messages: messages.filter(m => m.role !== 'assistant' || !m.nudge), // Exclude existing nudges from context
             trigger,
+            avoidTopics,
           })
         });
         
@@ -114,37 +161,63 @@ const ExpandableCards = ({ sessionId, onCardCountChange, onCardsChange, cards, s
           return;
         }
 
-        const now = Date.now();
-        let newCards = [...cards];
+        // Filter out duplicates by topic and text hash. We only add ONE card per fetch.
+        const candidates = generated
+          .filter((n) => n && typeof n.text === 'string' && n.text.trim())
+          .map((n) => ({
+            ...n,
+            _topicKey: normalizeText(n.topic || n.goal || 'nudge'),
+            _hash: hashText(n.text),
+          }));
 
-        generated.forEach((nudge, idx) => {
-          if (!nudge || !nudge.text) return;
-          if (newCards.length >= MAX_ACTIVE_AUTO_CARDS && trigger !== 'manual_card') {
-            return;
-          }
-
-          const titleSource = nudge.topic || nudge.goal || 'Nudge';
-          const title =
-            titleSource.charAt(0).toUpperCase() + titleSource.slice(1);
-
-          const card = {
-            id: now + idx,
-            title,
-            shortDescription: nudge.text,
-            fullContent: nudge.text,
-            nudgeId: nudge.id || null,
-          };
-          newCards = [...newCards, card];
+        const filtered = candidates.filter((n) => {
+          if (seenTextHashesRef.current.has(n._hash)) return false;
+          if (n._topicKey && seenTopicsRef.current.has(n._topicKey)) return false;
+          return true;
         });
 
-        if (newCards.length !== cards.length) {
-          onCardsChange(newCards);
+        const chosen = filtered[0] || candidates.find((n) => !seenTextHashesRef.current.has(n._hash));
+
+        if (!chosen) {
+          console.log('All generated nudges were duplicates; skipping');
+          return;
         }
+
+        const titleSource = chosen.topic || chosen.goal || 'Nudge';
+        const title = titleSource.charAt(0).toUpperCase() + titleSource.slice(1);
+
+        const newCard = {
+          id: Date.now(),
+          title,
+          topic: chosen.topic || null,
+          goal: chosen.goal || null,
+          shortDescription: chosen.text,
+          fullContent: chosen.text,
+          nudgeId: chosen.id || null,
+        };
+
+        // Update seen sets (persist through moving to history)
+        if (chosen._topicKey) seenTopicsRef.current.add(chosen._topicKey);
+        seenTextHashesRef.current.add(chosen._hash);
+
+        onCardsChange([...cards, newCard]);
       } else if (data && data.text) {
         // Backwards compatibility with single-nudge response shape
+        const topicKey = normalizeText(data.category || 'nudge');
+        const textHash = hashText(data.text);
+
+        if (seenTextHashesRef.current.has(textHash) || seenTopicsRef.current.has(topicKey)) {
+          console.log('Legacy nudge was a duplicate; skipping');
+          return;
+        }
+
+        seenTopicsRef.current.add(topicKey);
+        seenTextHashesRef.current.add(textHash);
+
         const newCard = {
           id: Date.now(),
           title: data.category || 'Nudge',
+          topic: data.category || null,
           shortDescription: data.text,
           fullContent: data.text,
           nudgeId: data._id,

@@ -195,12 +195,22 @@ const Chatbot = () => {
     }
     
     try {
+      const avoidTopics = Array.from(
+        new Set(
+          messages
+            .filter((m) => m && m.nudge && m.nudgeMeta && m.nudgeMeta.topic)
+            .map((m) => String(m.nudgeMeta.topic).toLowerCase().trim())
+            .filter(Boolean)
+        )
+      ).slice(-20);
+
       const body = {
         sessionId: currentSessionId || null,
         scratchpadText,
         shownNudgeIds: [], // chat-based nudges don't track IDs yet
         messages: messages.filter((m) => m.role !== "assistant" || !m.nudge),
         trigger: "manual_chat",
+        avoidTopics,
       };
 
       const response = await fetch(apiUrl("/api/smart"), {
