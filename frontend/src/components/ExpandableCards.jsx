@@ -66,6 +66,70 @@ const ExpandableCards = ({ sessionId, onCardCountChange, onCardsChange, cards, s
     }
   }, [spawnTrigger]);
 
+  // Agent-driven nudges (chat turn -> agent returns nudges)
+  useEffect(() => {
+    const handleAgentNudgesReady = (event) => {
+      const nudges = event?.detail?.nudges;
+      if (!Array.isArray(nudges) || nudges.length === 0) return;
+
+      // Global cap: no more than MAX_ACTIVE_CARDS active at once
+      if (cards.length >= MAX_ACTIVE_CARDS) {
+        toast({
+          title: "Too many active nudges",
+          description: "Move a card to history to make room for a new one.",
+          status: "info",
+          duration: 2500,
+          isClosable: true,
+        });
+        return;
+      }
+
+      // Filter candidates to avoid repeating topics/text.
+      const candidates = nudges
+        .filter((n) => n && typeof n.text === 'string' && n.text.trim())
+        .map((n) => ({
+          ...n,
+          _topicKey: normalizeText(n.topic || n.goal || 'nudge'),
+          _hash: hashText(n.text),
+        }));
+
+      const filtered = candidates.filter((n) => {
+        if (seenTextHashesRef.current.has(n._hash)) return false;
+        if (n._topicKey && seenTopicsRef.current.has(n._topicKey)) return false;
+        return true;
+      });
+
+      const chosen =
+        filtered[0] ||
+        candidates.find((n) => !seenTextHashesRef.current.has(n._hash)) ||
+        null;
+
+      if (!chosen) return;
+
+      const titleSource = chosen.topic || chosen.goal || 'Nudge';
+      const title = titleSource.charAt(0).toUpperCase() + titleSource.slice(1);
+
+      const newCard = {
+        id: Date.now(),
+        title,
+        topic: chosen.topic || null,
+        goal: chosen.goal || null,
+        shortDescription: chosen.text,
+        fullContent: chosen.text,
+        nudgeId: chosen.id || null,
+      };
+
+      // Update seen sets immediately to avoid duplicates during rapid events.
+      if (chosen._topicKey) seenTopicsRef.current.add(chosen._topicKey);
+      seenTextHashesRef.current.add(chosen._hash);
+
+      onCardsChange([...cards, newCard]); // add exactly one card per agent response
+    };
+
+    window.addEventListener('agent_nudges_ready', handleAgentNudgesReady);
+    return () => window.removeEventListener('agent_nudges_ready', handleAgentNudgesReady);
+  }, [cards, onCardsChange, toast]);
+
   // Notify parent of card count changes
   useEffect(() => {
     if (onCardCountChange) {

@@ -6,12 +6,16 @@ dotenv.config();
 export const getChatCompletion = async (messages) => {
     const url = `https://azureapi.zotgpt.uci.edu/openai/deployments/${process.env.DEPLOYMENT_ID}/chat/completions?api-version=${process.env.API_VERSION}`;
 
+    const maxCompletionTokens = Number(process.env.MAX_COMPLETION_TOKENS || 1024);
+
     const data = {
       temperature: 1,
       top_p: 1,
       stream: false,
       stop: null,
-      max_tokens: 1024,
+      // Some Azure/OpenAI-compatible endpoints now require max_completion_tokens.
+      // Using max_tokens will error on newer models.
+      max_completion_tokens: maxCompletionTokens,
       messages: [
         {
           role: "system",
@@ -36,7 +40,8 @@ export const getChatCompletion = async (messages) => {
       });
   
       if (!response.ok) {
-        throw new Error(`HTTP error! Status: ${response.status}`);
+        const errorText = await response.text();
+        throw new Error(`HTTP error! Status: ${response.status}. Body: ${errorText}`);
       }
   
       const result = await response.json();

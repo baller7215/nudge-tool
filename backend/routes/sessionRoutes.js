@@ -203,6 +203,12 @@ router.post('/:sessionId/end', async (req, res) => {
       session: endedSession
     });
   } catch (error) {
+    if (error.message === 'Session not found') {
+      return res.status(404).json({
+        success: false,
+        message: 'Session not found'
+      });
+    }
     console.error('Error ending session:', error);
     res.status(500).json({
       success: false,

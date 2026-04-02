@@ -131,13 +131,15 @@ const Chatbot = () => {
       }
       
       try {
-        // Send chat request with real session ID
-        const response = await fetch(apiUrl("/api/chat"), {
+        // Send agent request with real session ID (chat + nudges)
+        const response = await fetch(apiUrl("/api/agent"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ 
             messages: [...messages, userMessage],
-            sessionId: currentSessionId 
+            sessionId: currentSessionId,
+            scratchpadText,
+            trigger: "chat_message",
           }),
         });
         
@@ -146,10 +148,23 @@ const Chatbot = () => {
         const data = await response.json();
         const assistantMessage = {
           role: "assistant",
-          content: data.choices[0].message.content,
+          content: data.assistantContent || "",
         };
-        
+
         setMessages(prev => [...prev, assistantMessage]);
+
+        // Let the card panel add nudges without duplicating chat-based spawning.
+        if (Array.isArray(data.nudges) && data.nudges.length > 0) {
+          try {
+            window.dispatchEvent(
+              new CustomEvent("agent_nudges_ready", {
+                detail: { nudges: data.nudges },
+              })
+            );
+          } catch (err) {
+            console.error("Failed to dispatch agent_nudges_ready:", err);
+          }
+        }
       } catch (error) {
         console.error("Error:", error);
         setMessages(prev => [
@@ -341,21 +356,36 @@ const Chatbot = () => {
     const updatedMessages = [...messages, { role: "user", content: userMessage.content }];
     setMessages(updatedMessages);
     try {
-      const response = await fetch(apiUrl("/api/chat"), {
+      const response = await fetch(apiUrl("/api/agent"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           messages: updatedMessages,
-          sessionId: sessionId 
+          sessionId: sessionId,
+          scratchpadText,
+          trigger: "chat_regenerate",
         }),
       });
       if (!response.ok) throw new Error("Failed to fetch response from the chatbot");
       const data = await response.json();
       const assistantMessage = {
         role: "assistant",
-        content: data.choices[0].message.content,
+        content: data.assistantContent || "",
       };
       setMessages((prev) => [...prev, assistantMessage]);
+
+      // Spawn agent-generated nudges into the card panel.
+      if (Array.isArray(data.nudges) && data.nudges.length > 0) {
+        try {
+          window.dispatchEvent(
+            new CustomEvent("agent_nudges_ready", {
+              detail: { nudges: data.nudges },
+            })
+          );
+        } catch (err) {
+          console.error("Failed to dispatch agent_nudges_ready:", err);
+        }
+      }
     } catch (error) {
       console.error("Error:", error);
       setMessages((prev) => [

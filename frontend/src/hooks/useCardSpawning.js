@@ -128,7 +128,7 @@ export const useCardSpawning = ({ showCards, sessionId }) => {
       }
     };
 
-    const eventNames = ['plantuml_updated', 'scratchpad_updated', 'chat_turn_completed'];
+    const eventNames = ['plantuml_updated', 'scratchpad_updated'];
     eventNames.forEach((name) => window.addEventListener(name, handleEventTrigger));
 
     return () => {

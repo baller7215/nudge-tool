@@ -95,7 +95,6 @@ const sessionSchema = new mongoose.Schema({
 });
 
 // Index for efficient querying
-sessionSchema.index({ sessionId: 1 });
 sessionSchema.index({ userId: 1 });
 sessionSchema.index({ startTime: -1 });
 sessionSchema.index({ isActive: 1 });

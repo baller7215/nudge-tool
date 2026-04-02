@@ -6,7 +6,26 @@ import { promisify } from 'util';
 // use deflateRaw for raw deflate (without zlib headers) as PlantUML expects
 const deflateRaw = promisify(zlib.deflateRaw);
 
-const PLANTUML_SERVER_URL = 'https://www.plantuml.com/plantuml';
+const PLANTUML_SERVER_URL = process.env.PLANTUML_SERVER_URL || 'https://www.plantuml.com/plantuml';
+const MAX_RETRIES = Number(process.env.PLANTUML_MAX_RETRIES || 3);
+const BASE_RETRY_DELAY_MS = Number(process.env.PLANTUML_RETRY_BASE_MS || 500);
+const MAX_CACHE_ENTRIES = Number(process.env.PLANTUML_CACHE_MAX_ENTRIES || 200);
+
+// Tiny in-memory cache to avoid repeated identical remote renders.
+const svgCache = new Map();
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const shouldRetryStatus = (status) => [429, 502, 503, 504, 509, 520].includes(status);
+
+const setCache = (key, value) => {
+  if (!key || !value) return;
+  if (svgCache.size >= MAX_CACHE_ENTRIES) {
+    const oldestKey = svgCache.keys().next().value;
+    if (oldestKey) svgCache.delete(oldestKey);
+  }
+  svgCache.set(key, value);
+};
 
 /**
  * renders PlantUML code to SVG by proxying to the public PlantUML server
@@ -25,10 +44,37 @@ export const renderPlantUmlToSvg = async (plantumlCode) => {
     
     console.log('Requesting PlantUML URL:', url.substring(0, 100) + '...');
     
-    const response = await axios.get(url, {
-      responseType: 'text',
-      timeout: 30000, // 30 second timeout
-    });
+    // Return from cache when possible.
+    const cached = svgCache.get(encoded);
+    if (cached) {
+      return cached;
+    }
+
+    let response;
+    let lastError = null;
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        response = await axios.get(url, {
+          responseType: 'text',
+          timeout: 30000, // 30 second timeout
+        });
+        break;
+      } catch (err) {
+        lastError = err;
+        const status = err?.response?.status;
+        const canRetry = attempt < MAX_RETRIES && shouldRetryStatus(status);
+        if (!canRetry) {
+          throw err;
+        }
+        const delayMs = BASE_RETRY_DELAY_MS * Math.pow(2, attempt);
+        console.warn(`PlantUML request failed with status ${status}; retrying in ${delayMs}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
+        await sleep(delayMs);
+      }
+    }
+
+    if (!response) {
+      throw lastError || new Error('Failed to render PlantUML');
+    }
 
     const responseText = response.data;
     
@@ -72,6 +118,7 @@ export const renderPlantUmlToSvg = async (plantumlCode) => {
       throw new Error(errorMsg);
     }
 
+    setCache(encoded, responseText);
     return responseText;
   } catch (error) {
     if (error.response) {
