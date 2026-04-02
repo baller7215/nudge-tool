@@ -15,10 +15,11 @@ export const getChatCompletionAbstract = async (req, res) => {
             try {
                 // Add user message to session
                 const lastUserMessage = messages[messages.length - 1];
-                if (lastUserMessage && lastUserMessage.role === 'user') {
+                const lastUserContent = String(lastUserMessage?.content ?? '').trim();
+                if (lastUserMessage && lastUserMessage.role === 'user' && lastUserContent) {
                     await sessionService.addMessage(sessionId, {
                         role: 'user',
-                        content: lastUserMessage.content,
+                        content: lastUserContent,
                         timestamp: new Date(),
                         responseTime: null,
                         tokensUsed: 0 // Could be calculated if needed
@@ -27,14 +28,17 @@ export const getChatCompletionAbstract = async (req, res) => {
 
                 // Add assistant response to session
                 if (completion.choices && completion.choices[0]) {
-                    await sessionService.addMessage(sessionId, {
-                        role: 'assistant',
-                        content: completion.choices[0].message.content,
-                        timestamp: new Date(),
-                        responseTime: responseTime,
-                        tokensUsed: completion.usage?.total_tokens || 0,
-                        model: completion.model || 'gpt-3.5-turbo'
-                    });
+                    const assistantContent = String(completion?.choices?.[0]?.message?.content ?? '').trim();
+                    if (assistantContent) {
+                        await sessionService.addMessage(sessionId, {
+                            role: 'assistant',
+                            content: assistantContent,
+                            timestamp: new Date(),
+                            responseTime: responseTime,
+                            tokensUsed: completion.usage?.total_tokens || 0,
+                            model: completion.model || 'gpt-3.5-turbo'
+                        });
+                    }
                 }
             } catch (sessionError) {
                 console.error('Error tracking session:', sessionError);

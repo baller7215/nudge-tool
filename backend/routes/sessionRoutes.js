@@ -203,11 +203,16 @@ router.post('/:sessionId/end', async (req, res) => {
       session: endedSession
     });
   } catch (error) {
-    console.error('Error ending session:', error);
-    res.status(500).json({
+    const isNotFound = String(error?.message || '').includes('Session not found');
+    if (isNotFound) {
+      console.warn(`Session end requested but not found: ${req.params.sessionId}`);
+    } else {
+      console.error('Error ending session:', error);
+    }
+    res.status(isNotFound ? 404 : 500).json({
       success: false,
-      message: 'Failed to end session',
-      error: error.message
+      message: isNotFound ? 'Session not found' : 'Failed to end session',
+      error: isNotFound ? undefined : error.message
     });
   }
 });

@@ -50,7 +50,13 @@ export const getSmartNudge = async (scratchpadText = '', messages = [], shownNud
     }
 
     // Format nudges for the GPT prompt (with new numbering starting from 1)
-    const nudgeOptions = allNudges.map((nudge, index) => ({
+    const maxNudgesInPrompt = parseInt(process.env.MAX_NUDGES_IN_PROMPT || "40", 10);
+    const nudgesForPrompt =
+      allNudges.length > maxNudgesInPrompt
+        ? [...allNudges].sort(() => Math.random() - 0.5).slice(0, maxNudgesInPrompt)
+        : allNudges;
+
+    const nudgeOptions = nudgesForPrompt.map((nudge, index) => ({
       index,
       id: nudge._id.toString(),
       text: nudge.text,
@@ -82,13 +88,13 @@ Based on the user's current work in the scratchpad and their conversation, pleas
     const selectedIndex = parseInt(response, 10) - 1;
     
     // Validate the index
-    if (isNaN(selectedIndex) || selectedIndex < 0 || selectedIndex >= allNudges.length) {
+    if (isNaN(selectedIndex) || selectedIndex < 0 || selectedIndex >= nudgesForPrompt.length) {
       console.log('Invalid nudge index from GPT, using random selection');
-      const randomNudge = allNudges[Math.floor(Math.random() * allNudges.length)];
+      const randomNudge = nudgesForPrompt[Math.floor(Math.random() * nudgesForPrompt.length)];
       return randomNudge;
     }
 
-    const selectedNudge = allNudges[selectedIndex];
+    const selectedNudge = nudgesForPrompt[selectedIndex];
     
     // Increment usage count
     await Nudge.findByIdAndUpdate(selectedNudge._id, {
