@@ -123,6 +123,33 @@ const buildNudgeContext = ({
     context += '\n';
   }
 
+    // Format nudges for the GPT prompt (with new numbering starting from 1)
+    const maxNudgesInPrompt = parseInt(process.env.MAX_NUDGES_IN_PROMPT || "40", 10);
+    const nudgesForPrompt =
+      allNudges.length > maxNudgesInPrompt
+        ? [...allNudges].sort(() => Math.random() - 0.5).slice(0, maxNudgesInPrompt)
+        : allNudges;
+
+    const nudgeOptions = nudgesForPrompt.map((nudge, index) => ({
+      index,
+      id: nudge._id.toString(),
+      text: nudge.text,
+      category: nudge.category
+    }));
+    
+    console.log(`Recommending from ${nudgeOptions.length} nudges (${shownNudgeIds.length} already shown)`);
+
+    // Create GPT prompt
+    const systemPrompt = `You are a helpful assistant that recommends the most relevant insight or nudge to help a user with their current work. Based on the user's scratchpad content and conversation history, suggest which nudge would be most helpful and contextual.`;
+    
+    const userPrompt = `${context}
+
+Here are the available nudges (numbered starting from 1):
+${nudgeOptions.map((opt, idx) => `${idx + 1}. [Category: ${opt.category}] ${opt.text}`).join('\n')}
+
+Based on the user's current work in the scratchpad and their conversation, please respond with ONLY the number (1-${nudgeOptions.length}) of the nudge that would be most helpful and relevant. Do not include any other text, just the number.`;
+
+    // Get recommendation from GPT
   return context;
 };
 
