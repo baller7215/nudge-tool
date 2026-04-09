@@ -51,18 +51,38 @@ const Chatbot = () => {
     scrollToBottom();
   }, [messages]);
 
-  // Notify nudge system when a regular assistant turn completes
+  const chatTypingTimeoutRef = React.useRef(null);
+
+  // Debounced typing-stop event for the nudge system.
   useEffect(() => {
-    if (!messages || messages.length === 0) return;
-    const last = messages[messages.length - 1];
-    if (last.role === "assistant" && !last.nudge) {
-      try {
-        window.dispatchEvent(new Event("chat_turn_completed"));
-      } catch (err) {
-        console.error("Failed to dispatch chat_turn_completed event:", err);
-      }
+    const trimmed = input.trim();
+
+    if (chatTypingTimeoutRef.current) {
+      clearTimeout(chatTypingTimeoutRef.current);
+      chatTypingTimeoutRef.current = null;
     }
-  }, [messages]);
+
+    if (!trimmed) return;
+
+    chatTypingTimeoutRef.current = setTimeout(() => {
+      try {
+        window.dispatchEvent(
+          new CustomEvent("chat_typing_stopped", {
+            detail: { message: input },
+          }),
+        );
+      } catch (err) {
+        console.error("Failed to dispatch chat_typing_stopped event:", err);
+      }
+    }, 2000);
+
+    return () => {
+      if (chatTypingTimeoutRef.current) {
+        clearTimeout(chatTypingTimeoutRef.current);
+        chatTypingTimeoutRef.current = null;
+      }
+    };
+  }, [input]);
 
   // Cleanup session when component unmounts
   useEffect(() => {
@@ -95,6 +115,19 @@ const Chatbot = () => {
     // Add user message immediately (synchronous UI update)
     const userMessage = { role: "user", content: currentInput };
     setMessages(prev => [...prev, userMessage]);
+
+    // Notify nudge system: a user message was just sent.
+    if (String(currentInput || '').trim()) {
+      try {
+        window.dispatchEvent(
+          new CustomEvent("user_message_sent", {
+            detail: { message: currentInput },
+          }),
+        );
+      } catch (err) {
+        console.error("Failed to dispatch user_message_sent event:", err);
+      }
+    }
     
     // Start loading state immediately
     setIsLoading(true);
@@ -195,6 +228,11 @@ const Chatbot = () => {
     }
     
     try {
+      const lastUser = [...messages]
+        .reverse()
+        .find((m) => m?.role === "user" && String(m?.content || "").trim());
+      const latestUserInput = String(lastUser?.content || "").trim();
+
       const avoidTopics = Array.from(
         new Set(
           messages
@@ -209,8 +247,9 @@ const Chatbot = () => {
         scratchpadText,
         shownNudgeIds: [], // chat-based nudges don't track IDs yet
         messages: messages.filter((m) => m.role !== "assistant" || !m.nudge),
-        trigger: "manual_chat",
+        trigger: "manual_spin",
         avoidTopics,
+        latestUserInput,
       };
 
       const response = await fetch(apiUrl("/api/smart"), {
@@ -312,16 +351,71 @@ const Chatbot = () => {
     }
 
     if (isNudge) {
-      // Fetch a new random nudge
+      // Fetch a new nudge via orchestrator+agent
       try {
-        const url = sessionId 
-          ? apiUrl(`/api/random?sessionId=${sessionId}`)
-          : apiUrl("/api/random");
-        
-        const response = await fetch(url);
+        // Create session if needed.
+        let currentSessionId = sessionId;
+        if (!currentSessionId) {
+          try {
+            currentSessionId = await sessionApi.createSession({
+              metadata: {
+                userAgent: navigator.userAgent,
+                deviceType: /Mobile|Android|iPhone|iPad/.test(navigator.userAgent) ? "mobile" : "desktop",
+              },
+            });
+            setSessionId(currentSessionId);
+          } catch (error) {
+            console.error("Failed to create session for nudge:", error);
+            currentSessionId = null;
+          }
+        }
+
+        const lastUser = [...messages]
+          .reverse()
+          .find((m) => m?.role === "user" && String(m?.content || "").trim());
+        const latestUserInput = String(lastUser?.content || "").trim();
+
+        const avoidTopics = Array.from(
+          new Set(
+            messages
+              .filter((m) => m && m.nudge && m.nudgeMeta && m.nudgeMeta.topic)
+              .map((m) => String(m.nudgeMeta.topic).toLowerCase().trim())
+              .filter(Boolean),
+          ),
+        ).slice(-20);
+
+        const response = await fetch(apiUrl("/api/smart"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sessionId: currentSessionId || null,
+            scratchpadText,
+            shownNudgeIds: [],
+            messages: messages.filter((m) => m.role !== "assistant" || !m.nudge),
+            trigger: "manual_spin",
+            avoidTopics,
+            latestUserInput,
+          }),
+        });
+
         if (!response.ok) throw new Error("Failed to fetch nudge");
         const data = await response.json();
-        const nudgeMsg = { role: "assistant", content: data.text, nudge: true };
+
+        const nudges = Array.isArray(data?.nudges) ? data.nudges : [];
+        if (!nudges.length) return;
+
+        const first = nudges[0];
+        const nudgeMsg = {
+          role: "assistant",
+          content: first.text,
+          nudge: true,
+          nudgeId: first.id || null,
+          nudgeMeta: {
+            phase: null,
+            goal: first.goal || null,
+            topic: first.topic || null,
+          },
+        };
         setMessages((prev) => [...prev, nudgeMsg]);
       } catch (error) {
         console.error("Error fetching nudge:", error);

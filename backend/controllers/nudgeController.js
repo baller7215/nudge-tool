@@ -1,6 +1,6 @@
 import { Nudge } from '../models/NudgeModel.js';
 import sessionService from '../services/sessionService.js';
-import { generateNudges, getSmartNudge } from '../services/nudgeService.js';
+import { runNudgeGraph } from '../services/nudgeGraph.js';
 
 export const getRandomNudge = async (req, res) => {
     const { sessionId } = req.query;
@@ -55,46 +55,115 @@ export const getSmartNudgeRecommendation = async (req, res) => {
         umlSummary,
         trigger,
         avoidTopics,
+        latestUserInput,
+        message: explicitMessage,
+        cooldownSeconds,
     } = req.body || {};
     
     try {
-        // generate one or more nudges via LLM
-        const result = await generateNudges({
-            sessionId: sessionId || null,
-            scratchpadText: scratchpadText || '',
-            messages: messages || [],
-            plantuml,
-            umlSummary,
-            trigger: trigger || 'timer',
-            avoidTopics: avoidTopics || [],
+        const realSessionId = sessionId || null;
+        const now = Date.now();
+        const cooldownMs = Number(cooldownSeconds ?? 60) * 1000;
+
+        // Cooldown: do nothing if we nudged too recently.
+        if (realSessionId) {
+            try {
+                const session = await sessionService.getSession(realSessionId);
+                const sessionMessages = Array.isArray(session?.messages) ? session.messages : [];
+                const lastNudge = [...sessionMessages]
+                    .reverse()
+                    .find((m) => m && m.isNudge && m.timestamp);
+
+                if (lastNudge?.timestamp) {
+                    const ts = new Date(lastNudge.timestamp).getTime();
+                    if (!Number.isNaN(ts) && now - ts < cooldownMs) {
+                        return res.json({ nudges: [], phase: null, trigger: trigger || null, umlSummary: null });
+                    }
+                }
+            } catch {
+                // If cooldown check fails, fall through to generate.
+            }
+        }
+
+        const session = realSessionId ? await sessionService.getSession(realSessionId).catch(() => null) : null;
+        const plantumlCode =
+            typeof plantuml === 'string'
+                ? plantuml
+                : typeof session?.getUmlState === 'function'
+                  ? session.getUmlState().plantumlCode
+                  : '';
+
+        const scratch = typeof scratchpadText === 'string' ? scratchpadText : '';
+
+        const messagesArr = Array.isArray(messages) ? messages : [];
+        const lastUser = [...messagesArr].reverse().find((m) => m?.role === 'user' && String(m?.content || '').trim());
+        const messageForNudge =
+            String(explicitMessage ?? latestUserInput ?? lastUser?.content ?? '').trim();
+
+        const workspace =
+            `Scratchpad:\n${scratch}\n\nPlantUML:\n${plantumlCode || ''}`.trim();
+
+        const result = await runNudgeGraph({
+            sessionId: realSessionId,
+            trigger: trigger || null,
+            message: messageForNudge,
+            workspace,
         });
 
-        const nudges = Array.isArray(result.nudges) ? result.nudges : [];
+        if (!Array.isArray(result.nudges) || result.nudges.length === 0 || result.action === 'none') {
+            return res.json({
+                nudges: [],
+                phase: null,
+                trigger: trigger || null,
+                umlSummary: null,
+            });
+        }
 
-        // Track in session if sessionId is provided
-        if (sessionId && nudges.length > 0) {
+        const mode = result.mode || 'reflect';
+        const nudgeText = String(result.nudges[0] || '').trim();
+        if (!nudgeText) {
+            return res.json({
+                nudges: [],
+                phase: null,
+                trigger: trigger || null,
+                umlSummary: null,
+            });
+        }
+
+        const nudgeDoc = await Nudge.create({
+            text: nudgeText,
+            category: mode,
+        });
+
+        if (realSessionId) {
             try {
-                const first = nudges[0];
-                await sessionService.addMessage(sessionId, {
+                await sessionService.addMessage(realSessionId, {
                     role: 'assistant',
-                    content: first.text,
+                    content: nudgeText,
                     timestamp: new Date(),
                     isNudge: true,
-                    nudgeId: first.id || null,
+                    nudgeId: String(nudgeDoc._id),
                     responseTime: null,
-                    tokensUsed: 0
+                    tokensUsed: 0,
                 });
             } catch (sessionError) {
                 console.error('Error tracking smart nudge in session:', sessionError);
-                // Don't fail the main request if session tracking fails
             }
         }
 
         res.json({
-            nudges,
-            phase: result.phase,
-            trigger: result.trigger,
-            umlSummary: result.umlSummary,
+            nudges: [
+                {
+                    id: String(nudgeDoc._id),
+                    text: nudgeDoc.text,
+                    goal: mode,
+                    topic: mode,
+                },
+            ],
+            phase: result.action || null,
+            trigger: trigger || null,
+            umlSummary: null,
+            nudgeReason: result.reason || null,
         });
     } catch (error) {
         console.error('Error getting smart nudge:', error);

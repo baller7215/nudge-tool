@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Box, Textarea, Spinner, Center, Text, HStack, IconButton, useToast, Button } from "@chakra-ui/react";
 import { EditIcon, ViewIcon } from "@chakra-ui/icons";
 import { apiUrl } from "../../api/index.jsx";
-import { useSession } from "../context/SessionContext";
+import { useSession } from "../context/SessionContext.jsx";
 
 const DEFAULT_PLANTUML = `@startuml
 start

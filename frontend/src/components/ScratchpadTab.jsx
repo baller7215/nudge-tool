@@ -4,14 +4,30 @@ import { useSession } from "../context/SessionContext";
 
 const ScratchpadTab = () => {
   const { sessionId: contextSessionId, setSessionId, scratchpadText, setScratchpadText } = useSession();
+  const scratchpadTypingTimeoutRef = React.useRef(null);
 
   const handleScratchpadChange = async (e) => {
     const newText = e.target.value;
     setScratchpadText(newText);
-    try {
-      window.dispatchEvent(new Event("scratchpad_updated"));
-    } catch (err) {
-      console.error("Failed to dispatch scratchpad_updated event:", err);
+
+    // Debounced typing-stop event for the nudge system.
+    if (scratchpadTypingTimeoutRef.current) {
+      clearTimeout(scratchpadTypingTimeoutRef.current);
+      scratchpadTypingTimeoutRef.current = null;
+    }
+
+    if (String(newText || '').trim()) {
+      scratchpadTypingTimeoutRef.current = setTimeout(() => {
+        try {
+          window.dispatchEvent(
+            new CustomEvent("scratchpad_typing_stopped", {
+              detail: { workspace: newText },
+            }),
+          );
+        } catch (err) {
+          console.error("Failed to dispatch scratchpad_typing_stopped event:", err);
+        }
+      }, 2000);
     }
 
     if (!contextSessionId && newText.length > 0) {
@@ -31,6 +47,14 @@ const ScratchpadTab = () => {
       // If session already exists, do nothing (snapshotting handled elsewhere)
     }
   };
+
+  React.useEffect(() => {
+    return () => {
+      if (scratchpadTypingTimeoutRef.current) {
+        clearTimeout(scratchpadTypingTimeoutRef.current);
+      }
+    };
+  }, []);
 
   return (
     <Box display="flex" flexDirection="column" height="100%" overflow="hidden">

@@ -10,138 +10,68 @@ import { useState, useEffect, useRef } from "react";
  * - session-based start/stop logic
  */
 export const useCardSpawning = ({ showCards, sessionId }) => {
-  const [spawnFrequency, setSpawnFrequency] = useState(60); // seconds
-  const [spawnTrigger, setSpawnTrigger] = useState(0);
-  const [isSpawning, setIsSpawning] = useState(false);
-  const [canSpawn, setCanSpawn] = useState(true);
-  const [isFirstShow, setIsFirstShow] = useState(true);
+  // Slider value becomes: minimum seconds between nudges.
+  const [spawnFrequency, setSpawnFrequency] = useState(60);
+  const [spawnTrigger, setSpawnTrigger] = useState(null);
 
-  const spawnIntervalRef = useRef(null);
-  const canSpawnRef = useRef(true);
-  const lastEventTriggerRef = useRef(0);
+  const showCardsRef = useRef(showCards);
+  const sessionIdRef = useRef(sessionId);
+  const spawnFrequencyRef = useRef(spawnFrequency);
+  const lastNudgeAtRef = useRef(0);
+  const nonceRef = useRef(0);
 
-  // Keep ref in sync with state
   useEffect(() => {
-    canSpawnRef.current = canSpawn;
-  }, [canSpawn]);
-
-  const stopSpawning = () => {
-    if (spawnIntervalRef.current) {
-      clearInterval(spawnIntervalRef.current);
-      spawnIntervalRef.current = null;
-    }
-  };
-
-  const startSpawning = () => {
-    if (spawnIntervalRef.current) {
-      clearInterval(spawnIntervalRef.current);
-    }
-
-    spawnIntervalRef.current = setInterval(() => {
-      if (showCards && canSpawnRef.current) {
-        console.log("Triggering spawn - cards visible and spawning allowed");
-        setSpawnTrigger((prev) => prev + 1);
-      } else {
-        console.log("Skipping spawn - cards hidden or spawning disabled", {
-          showCards,
-          canSpawn: canSpawnRef.current,
-        });
-      }
-    }, spawnFrequency * 1000);
-  };
-
-  // Track when cards are shown/hidden to prevent unwanted spawning
-  useEffect(() => {
-    if (showCards) {
-      console.log("Cards shown - enabling spawning");
-      setCanSpawn(true);
-      canSpawnRef.current = true;
-      setSpawnTrigger(0);
-
-      // Restart the spawning timer if we have a session
-      if (sessionId && isSpawning) {
-        stopSpawning();
-        startSpawning();
-      }
-
-      // Trigger initial spawn if this is the first show
-      if (isFirstShow && sessionId) {
-        setTimeout(() => {
-          setSpawnTrigger(1);
-        }, 1000);
-      }
-    } else {
-      console.log("Cards hidden - disabling spawning");
-      setCanSpawn(false);
-      canSpawnRef.current = false;
-      setSpawnTrigger(0);
-      setIsFirstShow(false);
-
-      if (isSpawning) {
-        stopSpawning();
-      }
-    }
-
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    showCardsRef.current = showCards;
   }, [showCards]);
 
-  // Start/stop card spawning based on session
   useEffect(() => {
-    if (sessionId && !isSpawning) {
-      setIsSpawning(true);
-      if (showCards) {
-        startSpawning();
-      }
-    } else if (!sessionId && isSpawning) {
-      setIsSpawning(false);
-      stopSpawning();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    sessionIdRef.current = sessionId;
   }, [sessionId]);
 
-  // Update spawn interval when frequency changes
   useEffect(() => {
-    if (isSpawning && showCards) {
-      stopSpawning();
-      startSpawning();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [spawnFrequency, showCards]);
+    spawnFrequencyRef.current = spawnFrequency;
+  }, [spawnFrequency]);
 
-  // Event-based triggers from UML, scratchpad, and chat activity
   useEffect(() => {
-    const MIN_EVENT_INTERVAL_MS = 30000;
-
-    const handleEventTrigger = () => {
-      if (!sessionId) {
-        return;
-      }
+    const maybeTrigger = (payload) => {
+      if (!showCardsRef.current) return;
 
       const now = Date.now();
-      if (now - lastEventTriggerRef.current < MIN_EVENT_INTERVAL_MS) {
-        return;
-      }
-      lastEventTriggerRef.current = now;
+      const cooldownMs = Number(spawnFrequencyRef.current || 0) * 1000;
+      if (cooldownMs > 0 && now - lastNudgeAtRef.current < cooldownMs) return;
 
-      if (showCards) {
-        setSpawnTrigger((prev) => prev + 1);
-      }
+      lastNudgeAtRef.current = now;
+      nonceRef.current += 1;
+      setSpawnTrigger({ nonce: nonceRef.current, ...payload });
     };
 
-    const eventNames = ['plantuml_updated', 'scratchpad_updated', 'chat_turn_completed'];
-    eventNames.forEach((name) => window.addEventListener(name, handleEventTrigger));
+    const onUserMessageSent = (e) => {
+      const message = e?.detail?.message ?? '';
+      if (!String(message || '').trim()) return;
+      maybeTrigger({ kind: 'user_message_sent', message: String(message || '') });
+    };
+
+    const onChatTypingStopped = (e) => {
+      const message = e?.detail?.message ?? '';
+      if (!String(message || '').trim()) return;
+      maybeTrigger({ kind: 'chat_typing_stopped', message: String(message || '') });
+    };
+
+    const onScratchpadTypingStopped = (e) => {
+      const workspace = e?.detail?.workspace ?? '';
+      if (!String(workspace || '').trim()) return;
+      maybeTrigger({ kind: 'scratchpad_typing_stopped', workspace: String(workspace || '') });
+    };
+
+    window.addEventListener('user_message_sent', onUserMessageSent);
+    window.addEventListener('chat_typing_stopped', onChatTypingStopped);
+    window.addEventListener('scratchpad_typing_stopped', onScratchpadTypingStopped);
 
     return () => {
-      eventNames.forEach((name) => window.removeEventListener(name, handleEventTrigger));
+      window.removeEventListener('user_message_sent', onUserMessageSent);
+      window.removeEventListener('chat_typing_stopped', onChatTypingStopped);
+      window.removeEventListener('scratchpad_typing_stopped', onScratchpadTypingStopped);
     };
-  }, [sessionId, showCards]);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      stopSpawning();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return {

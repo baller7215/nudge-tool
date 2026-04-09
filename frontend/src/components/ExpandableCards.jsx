@@ -23,9 +23,8 @@ const ExpandableCards = ({ sessionId, onCardCountChange, onCardsChange, cards, s
   const { scratchpadText, messages } = useSession();
 
   // Constraints:
-  // - spawn only ONE nudge per trigger
   // - cap active cards to avoid overwhelm
-  const MAX_ACTIVE_CARDS = 5;
+  const MAX_ACTIVE_CARDS = 1;
 
   // Track what we've already shown this session so we don't repeat topics/text.
   const seenTopicsRef = useRef(new Set());
@@ -62,7 +61,11 @@ const ExpandableCards = ({ sessionId, onCardCountChange, onCardsChange, cards, s
   // Listen for spawn triggers
   useEffect(() => {
     if (spawnTrigger) {
-      fetchNudges({ useSmart: true, trigger: 'timer' });
+      fetchNudges({
+        useSmart: true,
+        trigger: spawnTrigger.kind || 'typing_stopped',
+        latestUserInput: spawnTrigger.message || '',
+      });
     }
   }, [spawnTrigger]);
 
@@ -82,7 +85,7 @@ const ExpandableCards = ({ sessionId, onCardCountChange, onCardsChange, cards, s
     return true;
   });
 
-  const fetchNudges = async ({ useSmart = true, trigger = 'timer' } = {}) => {
+  const fetchNudges = async ({ useSmart = true, trigger = 'timer', latestUserInput = '' } = {}) => {
     // Global cap: no more than MAX_ACTIVE_CARDS active at once
     if (cards.length >= MAX_ACTIVE_CARDS) {
       if (trigger === 'manual_card') {
@@ -94,7 +97,12 @@ const ExpandableCards = ({ sessionId, onCardCountChange, onCardsChange, cards, s
           isClosable: true,
         });
       }
-      return;
+      // For automatic event-based triggers, replace the active bubble.
+      if (trigger !== 'manual_card') {
+        onCardsChange([]);
+      } else {
+        return;
+      }
     }
 
     setIsLoading(true);
@@ -104,7 +112,12 @@ const ExpandableCards = ({ sessionId, onCardCountChange, onCardsChange, cards, s
       
       let data;
       
-      if (useSmart && sessionId && (scratchpadText || messages.length > 0)) {
+      if (useSmart && (scratchpadText || messages.length > 0)) {
+        const lastUser = [...messages]
+          .reverse()
+          .find((m) => m?.role === 'user' && String(m?.content || '').trim());
+        const resolvedLatestUserInput = String(latestUserInput || lastUser?.content || '').trim();
+
         // Use smart nudge API with context
         console.log('Fetching smart nudge with context');
 
@@ -121,6 +134,7 @@ const ExpandableCards = ({ sessionId, onCardCountChange, onCardsChange, cards, s
             messages: messages.filter(m => m.role !== 'assistant' || !m.nudge), // Exclude existing nudges from context
             trigger,
             avoidTopics,
+            latestUserInput: resolvedLatestUserInput,
           })
         });
         
@@ -200,7 +214,7 @@ const ExpandableCards = ({ sessionId, onCardCountChange, onCardsChange, cards, s
         if (chosen._topicKey) seenTopicsRef.current.add(chosen._topicKey);
         seenTextHashesRef.current.add(chosen._hash);
 
-        onCardsChange([...cards, newCard]);
+        onCardsChange(trigger !== 'manual_card' ? [newCard] : [...cards, newCard]);
       } else if (data && data.text) {
         // Backwards compatibility with single-nudge response shape
         const topicKey = normalizeText(data.category || 'nudge');
@@ -222,7 +236,7 @@ const ExpandableCards = ({ sessionId, onCardCountChange, onCardsChange, cards, s
           fullContent: data.text,
           nudgeId: data._id,
         };
-        const newCards = [...cards, newCard];
+        const newCards = trigger !== 'manual_card' ? [newCard] : [...cards, newCard];
         onCardsChange(newCards);
       }
     } catch (error) {
@@ -329,18 +343,18 @@ const ExpandableCards = ({ sessionId, onCardCountChange, onCardsChange, cards, s
         </HStack>
       </Flex>
       
-      <HStack spacing={4} overflowX="auto" align="stretch" pb={2}>
+      <HStack spacing={0} overflowX="hidden" align="stretch" pb={2}>
         {filteredCards.map((card, idx) => (
           <Box
             key={card.id}
             bg="white"
-            borderRadius="xl"
-            boxShadow="md"
+            borderRadius="lg"
+            boxShadow="sm"
             border="1px solid"
             borderColor="gray.200"
-            minW="260px"
-            maxW="260px"
-            p={4}
+            minW="240px"
+            maxW="240px"
+            p={3}
             display="flex"
             flexDirection="column"
             justifyContent="space-between"
@@ -364,13 +378,13 @@ const ExpandableCards = ({ sessionId, onCardCountChange, onCardsChange, cards, s
             </Tooltip>
             
             <VStack align="stretch" spacing={2} flex="1">
-              <Text as="h4" fontWeight="bold" fontSize="md" mb={1}>{card.title}</Text>
-              <Text fontSize="sm" color="gray.700">{card.shortDescription}</Text>
+              <Text as="h4" fontWeight="bold" fontSize="sm" mb={1}>{card.title}</Text>
+              <Text fontSize="sm" color="gray.700" lineHeight="1.3">{card.shortDescription}</Text>
             </VStack>
-            <HStack spacing={4} mt={4} justify="center">
+            <HStack spacing={3} mt={3} justify="center">
               <Tooltip label="Like" hasArrow>
                 <IconButton
-                  icon={<FaThumbsUp size={24} />}
+                    icon={<FaThumbsUp size={18} />}
                   aria-label="Like"
                   variant="ghost"
                   onClick={() => handleLike(card)}
@@ -385,7 +399,7 @@ const ExpandableCards = ({ sessionId, onCardCountChange, onCardsChange, cards, s
               </Tooltip>
               <Tooltip label="Dislike" hasArrow>
                 <IconButton
-                  icon={<FaThumbsDown size={24} />}
+                  icon={<FaThumbsDown size={18} />}
                   aria-label="Dislike"
                   variant="ghost"
                   onClick={() => handleDislike(card)}
@@ -395,7 +409,7 @@ const ExpandableCards = ({ sessionId, onCardCountChange, onCardsChange, cards, s
                     color: cardFeedback[card.id] === 'dislike' ? 'red.600' : 'gray.500'
                   }}
                   borderRadius="full"
-                  size="lg"
+                    size="sm"
                 />
               </Tooltip>
             </HStack>
