@@ -24,7 +24,7 @@ const ExpandableCards = ({ sessionId, onCardCountChange, onCardsChange, cards, s
 
   // Constraints:
   // - cap active cards to avoid overwhelm
-  const MAX_ACTIVE_CARDS = 1;
+  const MAX_ACTIVE_CARDS = 5;
 
   // Track what we've already shown this session so we don't repeat topics/text.
   const seenTopicsRef = useRef(new Set());
