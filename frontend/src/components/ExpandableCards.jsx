@@ -15,10 +15,18 @@ import { sessionApi } from '../../api/sessionApi.js';
 import { apiUrl } from '../../api/index.jsx';
 import { useSession } from '../context/SessionContext.jsx';
 
-const ExpandableCards = ({ sessionId, onCardCountChange, onCardsChange, cards, spawnTrigger }) => {
+const ExpandableCards = ({
+  sessionId,
+  onCardCountChange,
+  onCardsChange,
+  onCardCreated,
+  onCardStatusChange,
+  cards,
+  spawnTrigger,
+}) => {
   const [isLoading, setIsLoading] = useState(false);
   const [cardFeedback, setCardFeedback] = useState({}); // { cardId: 'like' | 'dislike' }
-  const [filter, setFilter] = useState('all'); // 'all', 'liked', 'disliked', 'neutral'
+  const [filter, setFilter] = useState('all'); // 'all', 'active', 'completed', 'dismissed'
   const toast = useToast();
   const { scratchpadText, messages } = useSession();
 
@@ -29,6 +37,7 @@ const ExpandableCards = ({ sessionId, onCardCountChange, onCardsChange, cards, s
   // Track what we've already shown this session so we don't repeat topics/text.
   const seenTopicsRef = useRef(new Set());
   const seenTextHashesRef = useRef(new Set());
+  const displayIdCountersRef = useRef({});
 
   const normalizeText = (text = '') =>
     String(text)
@@ -46,17 +55,41 @@ const ExpandableCards = ({ sessionId, onCardCountChange, onCardsChange, cards, s
     return (hash >>> 0).toString(16);
   };
 
+  const resolveDisplayPrefix = (source = '') => {
+    const normalized = String(source || '').toLowerCase();
+    if (normalized.includes('structure')) return 'S';
+    if (normalized.includes('expand')) return 'E';
+    if (normalized.includes('reflect')) return 'R';
+    return 'N';
+  };
+
+  const nextDisplayId = (source = '') => {
+    const prefix = resolveDisplayPrefix(source);
+    const next = (displayIdCountersRef.current[prefix] || 0) + 1;
+    displayIdCountersRef.current[prefix] = next;
+    return `${prefix}${next}`;
+  };
+
   console.log('ExpandableCards sessionId:', sessionId);
 
-  // Seed seen sets from existing cards (for hot reload / persistence)
+  // Seed seen sets/counters from existing cards (for hot reload / persistence)
   useEffect(() => {
     cards.forEach((c) => {
       const topic = normalizeText(c.topic || c.title || '');
       if (topic) seenTopicsRef.current.add(topic);
       if (c.fullContent) seenTextHashesRef.current.add(hashText(c.fullContent));
+      if (c.displayId) {
+        const match = String(c.displayId).toUpperCase().match(/^([A-Z])(\d+)$/);
+        if (match) {
+          const [, prefix, count] = match;
+          displayIdCountersRef.current[prefix] = Math.max(
+            displayIdCountersRef.current[prefix] || 0,
+            Number(count),
+          );
+        }
+      }
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [cards]);
 
   // Listen for spawn triggers
   useEffect(() => {
@@ -79,15 +112,16 @@ const ExpandableCards = ({ sessionId, onCardCountChange, onCardsChange, cards, s
   // Filter cards based on current filter
   const filteredCards = cards.filter(card => {
     if (filter === 'all') return true;
-    if (filter === 'liked') return cardFeedback[card.id] === 'like';
-    if (filter === 'disliked') return cardFeedback[card.id] === 'dislike';
-    if (filter === 'neutral') return !cardFeedback[card.id] || cardFeedback[card.id] === 'neutral';
+    if (filter === 'active') return (card.status || 'active') === 'active';
+    if (filter === 'completed') return card.status === 'completed';
+    if (filter === 'dismissed') return card.status === 'dismissed';
     return true;
   });
 
   const fetchNudges = async ({ useSmart = true, trigger = 'timer', latestUserInput = '' } = {}) => {
     // Global cap: no more than MAX_ACTIVE_CARDS active at once
-    if (cards.length >= MAX_ACTIVE_CARDS) {
+    const activeCount = cards.filter((c) => (c.status || 'active') === 'active').length;
+    if (activeCount >= MAX_ACTIVE_CARDS) {
       if (trigger === 'manual_card') {
         toast({
           title: "Too many active nudges",
@@ -97,12 +131,7 @@ const ExpandableCards = ({ sessionId, onCardCountChange, onCardsChange, cards, s
           isClosable: true,
         });
       }
-      // For automatic event-based triggers, replace the active bubble.
-      if (trigger !== 'manual_card') {
-        onCardsChange([]);
-      } else {
-        return;
-      }
+      return;
     }
 
     setIsLoading(true);
@@ -202,19 +231,25 @@ const ExpandableCards = ({ sessionId, onCardCountChange, onCardsChange, cards, s
 
         const newCard = {
           id: Date.now(),
+          displayId: nextDisplayId(chosen.topic || chosen.goal || title),
           title,
           topic: chosen.topic || null,
           goal: chosen.goal || null,
           shortDescription: chosen.text,
           fullContent: chosen.text,
           nudgeId: chosen.id || null,
+          status: 'active',
         };
 
         // Update seen sets (persist through moving to history)
         if (chosen._topicKey) seenTopicsRef.current.add(chosen._topicKey);
         seenTextHashesRef.current.add(chosen._hash);
 
-        onCardsChange(trigger !== 'manual_card' ? [newCard] : [...cards, newCard]);
+        const nextCards = [...cards, newCard];
+        onCardsChange(nextCards);
+        if (onCardCreated) {
+          onCardCreated(newCard);
+        }
       } else if (data && data.text) {
         // Backwards compatibility with single-nudge response shape
         const topicKey = normalizeText(data.category || 'nudge');
@@ -230,14 +265,19 @@ const ExpandableCards = ({ sessionId, onCardCountChange, onCardsChange, cards, s
 
         const newCard = {
           id: Date.now(),
+          displayId: nextDisplayId(data.category || 'nudge'),
           title: data.category || 'Nudge',
           topic: data.category || null,
           shortDescription: data.text,
           fullContent: data.text,
           nudgeId: data._id,
+          status: 'active',
         };
-        const newCards = trigger !== 'manual_card' ? [newCard] : [...cards, newCard];
+        const newCards = [...cards, newCard];
         onCardsChange(newCards);
+        if (onCardCreated) {
+          onCardCreated(newCard);
+        }
       }
     } catch (error) {
       console.error("Error fetching nudge:", error);
@@ -289,6 +329,12 @@ const ExpandableCards = ({ sessionId, onCardCountChange, onCardsChange, cards, s
     }
   };
 
+  const handleSetStatus = (card, status) => {
+    if (onCardStatusChange) {
+      onCardStatusChange(card.displayId, status);
+    }
+  };
+
   return (
     <Box width="100%" py={5} px={5}>
       <Flex justify="space-between" align="center" mb={4}>
@@ -318,32 +364,32 @@ const ExpandableCards = ({ sessionId, onCardCountChange, onCardsChange, cards, s
           </Button>
           <Button
             size="sm"
-            variant={filter === 'liked' ? 'solid' : 'outline'}
+            variant={filter === 'active' ? 'solid' : 'outline'}
             colorScheme="green"
-            onClick={() => setFilter('liked')}
+            onClick={() => setFilter('active')}
           >
-            Liked ({cards.filter(card => cardFeedback[card.id] === 'like').length})
+            Active ({cards.filter(card => (card.status || 'active') === 'active').length})
           </Button>
           <Button
             size="sm"
-            variant={filter === 'disliked' ? 'solid' : 'outline'}
+            variant={filter === 'completed' ? 'solid' : 'outline'}
             colorScheme="red"
-            onClick={() => setFilter('disliked')}
+            onClick={() => setFilter('completed')}
           >
-            Disliked ({cards.filter(card => cardFeedback[card.id] === 'dislike').length})
+            Completed ({cards.filter(card => card.status === 'completed').length})
           </Button>
           <Button
             size="sm"
-            variant={filter === 'neutral' ? 'solid' : 'outline'}
+            variant={filter === 'dismissed' ? 'solid' : 'outline'}
             colorScheme="gray"
-            onClick={() => setFilter('neutral')}
+            onClick={() => setFilter('dismissed')}
           >
-            Neutral ({cards.filter(card => !cardFeedback[card.id] || cardFeedback[card.id] === 'neutral').length})
+            Dismissed ({cards.filter(card => card.status === 'dismissed').length})
           </Button>
         </HStack>
       </Flex>
       
-      <HStack spacing={0} overflowX="hidden" align="stretch" pb={2}>
+      <HStack spacing={5} overflowX="hidden" align="stretch" pb={2}>
         {filteredCards.map((card, idx) => (
           <Box
             key={card.id}
@@ -378,9 +424,32 @@ const ExpandableCards = ({ sessionId, onCardCountChange, onCardsChange, cards, s
             </Tooltip>
             
             <VStack align="stretch" spacing={2} flex="1">
-              <Text as="h4" fontWeight="bold" fontSize="sm" mb={1}>{card.title}</Text>
+              <Text as="h4" fontWeight="bold" fontSize="sm" mb={1}>
+                {card.displayId ? `#${card.displayId} · ` : ''}{card.title}
+              </Text>
+              <Text fontSize="xs" color="gray.500" textTransform="uppercase">
+                {card.status || 'active'}
+              </Text>
               <Text fontSize="sm" color="gray.700" lineHeight="1.3">{card.shortDescription}</Text>
             </VStack>
+            <HStack spacing={2} mt={2} justify="center">
+              <Button
+                size="xs"
+                colorScheme={(card.status || 'active') === 'completed' ? 'blue' : 'green'}
+                variant="outline"
+                onClick={() => handleSetStatus(card, (card.status || 'active') === 'completed' ? 'active' : 'completed')}
+              >
+                {(card.status || 'active') === 'completed' ? 'Reopen' : 'Complete'}
+              </Button>
+              <Button
+                size="xs"
+                colorScheme={(card.status || 'active') === 'dismissed' ? 'blue' : 'gray'}
+                variant="outline"
+                onClick={() => handleSetStatus(card, (card.status || 'active') === 'dismissed' ? 'active' : 'dismissed')}
+              >
+                {(card.status || 'active') === 'dismissed' ? 'Undismiss' : 'Dismiss'}
+              </Button>
+            </HStack>
             <HStack spacing={3} mt={3} justify="center">
               <Tooltip label="Like" hasArrow>
                 <IconButton

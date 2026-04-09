@@ -274,4 +274,57 @@ router.post('/:sessionId/scratchpad-snapshot', async (req, res) => {
   }
 });
 
+// Upsert nudge status + metadata
+router.post('/:sessionId/nudge-state', async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const { displayId, nudgeId, title, content, category, status } = req.body;
+
+    if (!displayId) {
+      return res.status(400).json({ success: false, message: 'displayId is required' });
+    }
+    if (!['active', 'completed', 'dismissed'].includes(status)) {
+      return res.status(400).json({ success: false, message: 'Invalid status' });
+    }
+
+    const updatedSession = await sessionService.upsertNudgeState(sessionId, {
+      displayId,
+      nudgeId,
+      title,
+      content,
+      category,
+      status,
+    });
+
+    res.json({
+      success: true,
+      message: 'Nudge state updated',
+      session: updatedSession,
+    });
+  } catch (error) {
+    console.error('Error updating nudge state:', error);
+    res.status(500).json({ success: false, message: 'Failed to update nudge state', error: error.message });
+  }
+});
+
+// Toggle nudge completion state from scratchpad command
+router.post('/:sessionId/nudge-state/:displayId/toggle-completion', async (req, res) => {
+  try {
+    const { sessionId, displayId } = req.params;
+    const updatedSession = await sessionService.toggleNudgeCompletion(sessionId, displayId);
+    res.json({
+      success: true,
+      message: 'Nudge completion toggled',
+      session: updatedSession,
+    });
+  } catch (error) {
+    const isNotFound = String(error?.message || '').includes('not found');
+    res.status(isNotFound ? 404 : 500).json({
+      success: false,
+      message: isNotFound ? 'Nudge not found' : 'Failed to toggle nudge completion',
+      error: error.message,
+    });
+  }
+});
+
 export default router; 

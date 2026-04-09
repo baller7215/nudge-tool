@@ -207,4 +207,41 @@ export const sessionApi = {
       throw error;
     }
   },
+
+  // Upsert nudge state for current session
+  upsertNudgeState: async (sessionId, nudgeData) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/${sessionId}/nudge-state`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(nudgeData),
+      });
+      if (!response.ok) {
+        throw new Error('Failed to update nudge state');
+      }
+      const data = await response.json();
+      return data.session;
+    } catch (error) {
+      console.error('Error updating nudge state:', error);
+      throw error;
+    }
+  },
+
+  // Toggle completion status by displayId
+  toggleNudgeCompletion: async (sessionId, displayId) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/${sessionId}/nudge-state/${encodeURIComponent(displayId)}/toggle-completion`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!response.ok) {
+        throw new Error('Failed to toggle nudge completion');
+      }
+      const data = await response.json();
+      return data.session;
+    } catch (error) {
+      console.error('Error toggling nudge completion:', error);
+      throw error;
+    }
+  },
 }; 

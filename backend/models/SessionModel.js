@@ -34,6 +34,17 @@ const scratchpadSnapshotSchema = new mongoose.Schema({
   timestamp: { type: Date, default: Date.now }
 });
 
+const nudgeStateSchema = new mongoose.Schema({
+  displayId: { type: String, required: true },
+  nudgeId: { type: String, default: null },
+  title: { type: String, required: true },
+  content: { type: String, required: true },
+  category: { type: String, default: 'nudge' },
+  status: { type: String, enum: ['active', 'completed', 'dismissed'], default: 'active' },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now },
+});
+
 const umlStateSchema = new mongoose.Schema({
   umlType: { type: String, enum: ['class', 'sequence', 'other'], default: 'class' },
   plantumlCode: { type: String },
@@ -87,6 +98,7 @@ const sessionSchema = new mongoose.Schema({
     deviceType: { type: String }
   },
   scratchpadSnapshots: [scratchpadSnapshotSchema],
+  nudgeStates: [nudgeStateSchema],
   umlState: umlStateSchema,
   umlRevisions: [umlRevisionSchema],
   currentUmlRevisionIndex: { type: Number, default: -1 }
@@ -205,6 +217,53 @@ sessionSchema.methods.addScratchpadSnapshot = function(text) {
     return this.save();
   }
   return Promise.resolve(this);
+};
+
+sessionSchema.methods.upsertNudgeState = function(nudgeData) {
+  const displayId = String(nudgeData?.displayId || '').trim().toUpperCase();
+  if (!displayId) {
+    throw new Error('displayId is required');
+  }
+
+  const status = String(nudgeData?.status || 'active').trim();
+  if (!['active', 'completed', 'dismissed'].includes(status)) {
+    throw new Error('Invalid nudge status');
+  }
+
+  const existing = (this.nudgeStates || []).find((n) => n.displayId === displayId);
+  if (existing) {
+    existing.nudgeId = nudgeData?.nudgeId ?? existing.nudgeId ?? null;
+    existing.title = nudgeData?.title || existing.title;
+    existing.content = nudgeData?.content || existing.content;
+    existing.category = nudgeData?.category || existing.category || 'nudge';
+    existing.status = status;
+    existing.updatedAt = new Date();
+  } else {
+    this.nudgeStates.push({
+      displayId,
+      nudgeId: nudgeData?.nudgeId ?? null,
+      title: nudgeData?.title || 'Nudge',
+      content: nudgeData?.content || '',
+      category: nudgeData?.category || 'nudge',
+      status,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+  }
+
+  return this.save();
+};
+
+sessionSchema.methods.toggleNudgeCompletion = function(displayId) {
+  const normalized = String(displayId || '').trim().toUpperCase();
+  const target = (this.nudgeStates || []).find((n) => n.displayId === normalized);
+  if (!target) {
+    throw new Error('Nudge not found');
+  }
+
+  target.status = target.status === 'completed' ? 'active' : 'completed';
+  target.updatedAt = new Date();
+  return this.save();
 };
 
 // Static method to create a new session

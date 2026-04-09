@@ -190,6 +190,36 @@ class SessionService {
       throw error;
     }
   }
+
+  // Upsert nudge state in the active session
+  async upsertNudgeState(sessionId, nudgeData) {
+    try {
+      const session = await Session.findOne({ sessionId });
+      if (!session) {
+        throw new Error('Session not found');
+      }
+      const updatedSession = await session.upsertNudgeState(nudgeData);
+      return updatedSession;
+    } catch (error) {
+      console.error('Error upserting nudge state:', error);
+      throw error;
+    }
+  }
+
+  // Toggle nudge completion by display ID
+  async toggleNudgeCompletion(sessionId, displayId) {
+    try {
+      const session = await Session.findOne({ sessionId });
+      if (!session) {
+        throw new Error('Session not found');
+      }
+      const updatedSession = await session.toggleNudgeCompletion(displayId);
+      return updatedSession;
+    } catch (error) {
+      console.error('Error toggling nudge completion:', error);
+      throw error;
+    }
+  }
 }
 
 export default new SessionService(); 

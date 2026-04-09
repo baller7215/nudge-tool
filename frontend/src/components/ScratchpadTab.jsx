@@ -1,5 +1,5 @@
 import React from "react";
-import { Box, Divider, HStack, IconButton, Select, Tooltip } from "@chakra-ui/react";
+import { Box, Button, Divider, HStack, IconButton, Select, Text, Tooltip, VStack } from "@chakra-ui/react";
 import Subscript from "@tiptap/extension-subscript";
 import Superscript from "@tiptap/extension-superscript";
 import TextAlign from "@tiptap/extension-text-align";
@@ -18,10 +18,44 @@ import {
   LuStrikethrough,
 } from "react-icons/lu";
 
-const ScratchpadTab = () => {
+const ScratchpadTab = ({ cards = [], onToggleNudgeCompletionByDisplayId }) => {
   const { sessionId: contextSessionId, setSessionId, scratchpadText, setScratchpadText } = useSession();
   const scratchpadTypingTimeoutRef = React.useRef(null);
   const isApplyingExternalUpdateRef = React.useRef(false);
+  const [pendingConfirmById, setPendingConfirmById] = React.useState({});
+
+  const normalizeDisplayId = React.useCallback((value = "") => String(value).replace(/^#/, "").trim().toUpperCase(), []);
+
+  const closeCommandTargets = React.useMemo(() => {
+    const found = new Set();
+    const regex = /closes\s+nudge\s+#([a-zA-Z]\d+)/gi;
+    let match = regex.exec(scratchpadText || "");
+    while (match) {
+      found.add(normalizeDisplayId(match[1]));
+      match = regex.exec(scratchpadText || "");
+    }
+    return Array.from(found);
+  }, [normalizeDisplayId, scratchpadText]);
+
+  const cardsById = React.useMemo(() => {
+    const map = new Map();
+    cards.forEach((card) => {
+      if (!card?.displayId) return;
+      map.set(normalizeDisplayId(card.displayId), card);
+    });
+    return map;
+  }, [cards, normalizeDisplayId]);
+
+  const handleCloseCommandClick = async (displayId) => {
+    if (!pendingConfirmById[displayId]) {
+      setPendingConfirmById((prev) => ({ ...prev, [displayId]: true }));
+      return;
+    }
+    if (onToggleNudgeCompletionByDisplayId) {
+      await onToggleNudgeCompletionByDisplayId(displayId);
+    }
+    setPendingConfirmById((prev) => ({ ...prev, [displayId]: false }));
+  };
 
   const getEditorMarkupFromText = React.useCallback((value) => {
     const escaped = String(value ?? "")
@@ -119,6 +153,42 @@ const ScratchpadTab = () => {
   return (
     <Box display="flex" flexDirection="column" height="100%" overflow="hidden">
       <Box flex="1" minHeight={0} overflow="auto" px={5} py={5}>
+        {closeCommandTargets.length > 0 && (
+          <VStack align="stretch" spacing={2} mb={3}>
+            {closeCommandTargets.map((displayId) => {
+              const card = cardsById.get(displayId);
+              const status = card?.status || "active";
+              const isPending = Boolean(pendingConfirmById[displayId]);
+              const intentLabel = status === "completed" ? "reopen" : "close";
+              return (
+                <HStack
+                  key={displayId}
+                  justify="space-between"
+                  borderWidth="1px"
+                  borderColor="gray.200"
+                  borderRadius="md"
+                  px={3}
+                  py={2}
+                  bg="gray.50"
+                >
+                  <Text fontSize="sm" color="gray.700">
+                    {card
+                      ? `Command found for #${displayId}: ${isPending ? `confirm ${intentLabel}` : `ready to ${intentLabel}`}.`
+                      : `Command found for #${displayId}, but no matching nudge exists in this session.`}
+                  </Text>
+                  <Button
+                    size="xs"
+                    colorScheme={status === "completed" ? "blue" : "purple"}
+                    onClick={() => handleCloseCommandClick(displayId)}
+                    isDisabled={!card}
+                  >
+                    {isPending ? `Confirm ${intentLabel}` : `${status === "completed" ? "Reopen" : "Close"} #${displayId}`}
+                  </Button>
+                </HStack>
+              );
+            })}
+          </VStack>
+        )}
         <Box borderWidth="1px" borderColor="gray.200" borderRadius="md" bg="white" height="100%" display="flex" flexDirection="column">
           <HStack p={2} spacing={2} borderBottomWidth="1px" borderColor="gray.100" wrap="wrap">
             <Select
