@@ -336,8 +336,8 @@ const ExpandableCards = ({
   };
 
   return (
-    <Box width="100%" py={5} px={5}>
-      <Flex justify="space-between" align="center" mb={4}>
+    <Box width="100%" py={3} px={4} display="flex" flexDirection="column" minH={0}>
+      <Flex justify="space-between" align="center" mb={3} flexWrap="wrap" gap={2} flexShrink={0}>
         <Button
           as="h3"
           colorScheme="pink"
@@ -389,7 +389,7 @@ const ExpandableCards = ({
         </HStack>
       </Flex>
       
-      <HStack spacing={5} overflowX="hidden" align="stretch" pb={2}>
+      <HStack spacing={5} overflowX="auto" align="stretch" pb={2} flexShrink={0} sx={{ scrollbarGutter: "stable" }}>
         {filteredCards.map((card, idx) => (
           <Box
             key={card.id}

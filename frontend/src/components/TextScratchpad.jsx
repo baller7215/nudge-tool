@@ -227,20 +227,31 @@ const TextScratchpad = ({ sessionId }) => {
             </TabPanels>
           </Tabs>
 
-          {/* Shared nudge panel – visible for both UML and Scratchpad tabs */}
+          {/* Shared nudge panel – capped height so UML / scratchpad keep most of the column */}
           {activeTab < 2 && (
-            <Box flexShrink={0} borderTop="1px" borderColor="gray.200" bg="white">
-              {showCards && (
-                <ExpandableCards
-                  sessionId={sessionId}
-                  onCardCountChange={handleCardCountChange}
-                  onCardsChange={handleCardsChange}
-                  onCardCreated={handleCardCreated}
-                  onCardStatusChange={handleCardStatusChange}
-                  cards={cards}
-                  spawnTrigger={spawnTrigger}
-                />
-              )}
+            <Box
+              flexShrink={1}
+              minH={0}
+              maxH={{ base: "42vh", md: "40vh" }}
+              display="flex"
+              flexDirection="column"
+              borderTop="1px"
+              borderColor="gray.200"
+              bg="white"
+            >
+              <Box flex="1" minH={0} overflowY="auto" overflowX="hidden">
+                {showCards && (
+                  <ExpandableCards
+                    sessionId={sessionId}
+                    onCardCountChange={handleCardCountChange}
+                    onCardsChange={handleCardsChange}
+                    onCardCreated={handleCardCreated}
+                    onCardStatusChange={handleCardStatusChange}
+                    cards={cards}
+                    spawnTrigger={spawnTrigger}
+                  />
+                )}
+              </Box>
               <CardControls
                 showCards={showCards}
                 onToggleShowCards={() => setShowCards((v) => !v)}
