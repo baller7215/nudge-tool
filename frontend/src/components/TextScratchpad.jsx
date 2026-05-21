@@ -5,6 +5,7 @@ import ExpandableCards from "./ExpandableCards";
 import CardControls from "./CardControls";
 import { useSession } from "../context/SessionContext";
 import ScratchpadTab from "./ScratchpadTab";
+import CloseNudgeCommandBar from "./CloseNudgeCommandBar";
 import PlantUmlTab from "./PlantUmlTab";
 import { useCardSpawning } from "../hooks/useCardSpawning";
 import { sessionApi } from "../../api/sessionApi";
@@ -126,24 +127,58 @@ const TextScratchpad = ({ sessionId }) => {
     }
   };
 
+  const applyNudgeStatusFromSession = (session, normalized) => {
+    const nudgeStates = Array.isArray(session?.nudgeStates) ? session.nudgeStates : [];
+    const match = nudgeStates.find((n) => normalizeDisplayId(n.displayId) === normalized);
+    if (!match) return null;
+
+    const nextCard = mapSessionNudgeToCard(match);
+    const showOnPanel = nextCard.status === "active";
+    setCards((prev) => {
+      const exists = prev.some((c) => normalizeDisplayId(c.displayId) === normalized);
+      if (exists) {
+        return prev.map((card) =>
+          normalizeDisplayId(card.displayId) === normalized
+            ? {
+                ...card,
+                ...nextCard,
+                id: card.id,
+                archivedFromPanel: showOnPanel ? false : card.archivedFromPanel,
+              }
+            : card,
+        );
+      }
+      return [...prev, { ...nextCard, archivedFromPanel: false }];
+    });
+    return match.status || "active";
+  };
+
   const handleToggleNudgeCompletionByDisplayId = async (displayId) => {
     const normalized = normalizeDisplayId(displayId);
-    const current = cards.find((c) => normalizeDisplayId(c.displayId) === normalized);
-    if (!current) return null;
 
     if (isRealSessionId(contextSessionId)) {
       try {
-        await sessionApi.toggleNudgeCompletion(contextSessionId, normalized);
+        const session = await sessionApi.toggleNudgeCompletion(contextSessionId, normalized);
+        return applyNudgeStatusFromSession(session, normalized);
       } catch (error) {
         console.error("Failed to toggle nudge completion:", error);
         return null;
       }
     }
 
+    const current = cards.find((c) => normalizeDisplayId(c.displayId) === normalized);
+    if (!current) return null;
+
     const nextStatus = current.status === "completed" ? "active" : "completed";
     setCards((prev) =>
       prev.map((card) =>
-        normalizeDisplayId(card.displayId) === normalized ? { ...card, status: nextStatus } : card,
+        normalizeDisplayId(card.displayId) === normalized
+          ? {
+              ...card,
+              status: nextStatus,
+              archivedFromPanel: nextStatus === "active" ? false : card.archivedFromPanel,
+            }
+          : card,
       ),
     );
     return nextStatus;
@@ -213,10 +248,7 @@ const TextScratchpad = ({ sessionId }) => {
                 <PlantUmlTab />
               </TabPanel>
               <TabPanel flex="1" minHeight={0} display="flex" flexDirection="column" p={0} position="relative" overflow="hidden">
-                <ScratchpadTab
-                  cards={cards}
-                  onToggleNudgeCompletionByDisplayId={handleToggleNudgeCompletionByDisplayId}
-                />
+                <ScratchpadTab />
               </TabPanel>
 
               <TabPanel flex="1" p={0} overflow="hidden" height="100%">
@@ -227,12 +259,20 @@ const TextScratchpad = ({ sessionId }) => {
             </TabPanels>
           </Tabs>
 
-          {/* Shared nudge panel – capped height so UML / scratchpad keep most of the column */}
+          {activeTab === 1 && (
+            <CloseNudgeCommandBar
+              cards={cards}
+              onToggleNudgeCompletionByDisplayId={handleToggleNudgeCompletionByDisplayId}
+            />
+          )}
+
+          {/* Nudge panel – compact strip so scratchpad keeps most of the column */}
           {activeTab < 2 && (
             <Box
-              flexShrink={1}
+              flexShrink={0}
+              flexGrow={0}
               minH={0}
-              maxH={{ base: "42vh", md: "40vh" }}
+              maxH={{ base: "280px", md: "300px" }}
               display="flex"
               flexDirection="column"
               borderTop="1px"

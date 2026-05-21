@@ -1,4 +1,4 @@
-import { Box, HStack, VStack, Text, Slider, SliderTrack, SliderFilledTrack, SliderThumb } from "@chakra-ui/react";
+import { Box, HStack, Text, Slider, SliderTrack, SliderFilledTrack, SliderThumb } from "@chakra-ui/react";
 import ToggleCardsButton from "./ToggleCardsButton";
 
 const formatFrequency = (seconds) => {
@@ -24,8 +24,8 @@ const CardControls = ({
   return (
     <Box
       bg="white"
-      px={5}
-      py={3}
+      px={3}
+      py={2}
       borderTop="1px solid"
       borderColor="gray.200"
       display="flex"
@@ -33,18 +33,17 @@ const CardControls = ({
       alignItems="center"
       flexShrink={0}
     >
-      <HStack spacing={4} align="center">
+      <HStack spacing={3} align="center" flexWrap="wrap">
         <ToggleCardsButton show={showCards} count={cardCount} onClick={onToggleShowCards} />
         {hasSession && (
-          <VStack spacing={2} align="start">
-            <Text fontSize="sm" color="gray.600" fontWeight="medium">
-              Move slider to adjust card frequency
+          <HStack spacing={2} align="center">
+            <Text fontSize="xs" color="gray.500" whiteSpace="nowrap">
+              Nudge frequency
             </Text>
-            <HStack spacing={3} align="center">
-              <Text fontSize="sm" color="gray.600" minW="60px">
-                {formatFrequency(spawnFrequency)}
-              </Text>
-              <Box flex="1" minW="200px" maxW="300px">
+            <Text fontSize="xs" color="gray.600" minW="48px" fontWeight="medium">
+              {formatFrequency(spawnFrequency)}
+            </Text>
+            <Box minW="140px" maxW="220px" w="180px">
                 <Slider
                   value={spawnFrequency}
                   onChange={onChangeSpawnFrequency}
@@ -59,8 +58,7 @@ const CardControls = ({
                   <SliderThumb />
                 </Slider>
               </Box>
-            </HStack>
-          </VStack>
+          </HStack>
         )}
       </HStack>
     </Box>

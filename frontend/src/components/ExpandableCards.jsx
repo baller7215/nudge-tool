@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
+  Badge,
   Box,
   Text,
   IconButton,
@@ -9,6 +10,14 @@ import {
   VStack,
   Tooltip,
   useToast,
+  Modal,
+  ModalOverlay,
+  ModalContent,
+  ModalHeader,
+  ModalBody,
+  ModalFooter,
+  ModalCloseButton,
+  useDisclosure,
 } from '@chakra-ui/react';
 import { FaThumbsUp, FaThumbsDown } from 'react-icons/fa';
 import { sessionApi } from '../../api/sessionApi.js';
@@ -27,6 +36,8 @@ const ExpandableCards = ({
   const [isLoading, setIsLoading] = useState(false);
   const [cardFeedback, setCardFeedback] = useState({}); // { cardId: 'like' | 'dislike' }
   const [filter, setFilter] = useState('all'); // 'all', 'active', 'completed', 'dismissed'
+  const [expandedCard, setExpandedCard] = useState(null);
+  const { isOpen: isExpandedOpen, onOpen: onExpandedOpen, onClose: onExpandedClose } = useDisclosure();
   const toast = useToast();
   const { scratchpadText, messages } = useSession();
 
@@ -109,8 +120,11 @@ const ExpandableCards = ({
     }
   }, [cards, onCardCountChange]);
 
+  // Cards removed from the panel (×) stay in session state for scratchpad `closes nudge` commands.
+  const panelCards = cards.filter((card) => !card.archivedFromPanel);
+
   // Filter cards based on current filter
-  const filteredCards = cards.filter(card => {
+  const filteredCards = panelCards.filter(card => {
     if (filter === 'all') return true;
     if (filter === 'active') return (card.status || 'active') === 'active';
     if (filter === 'completed') return card.status === 'completed';
@@ -120,7 +134,7 @@ const ExpandableCards = ({
 
   const fetchNudges = async ({ useSmart = true, trigger = 'timer', latestUserInput = '' } = {}) => {
     // Global cap: no more than MAX_ACTIVE_CARDS active at once
-    const activeCount = cards.filter((c) => (c.status || 'active') === 'active').length;
+    const activeCount = panelCards.filter((c) => (c.status || 'active') === 'active').length;
     if (activeCount >= MAX_ACTIVE_CARDS) {
       if (trigger === 'manual_card') {
         toast({
@@ -305,7 +319,9 @@ const ExpandableCards = ({
 
   const handleMoveToHistory = async (card) => {
     console.log('Moving card to history:', card);
-    const newCards = cards.filter(c => c.id !== card.id);
+    const newCards = cards.map((c) =>
+      c.id === card.id ? { ...c, archivedFromPanel: true } : c,
+    );
     onCardsChange(newCards);
     
     // Track card interaction if session exists
@@ -333,20 +349,133 @@ const ExpandableCards = ({
     if (onCardStatusChange) {
       onCardStatusChange(card.displayId, status);
     }
+    if (expandedCard?.id === card.id) {
+      setExpandedCard((prev) => (prev ? { ...prev, status } : prev));
+    }
+  };
+
+  const stopCardClick = (event) => event.stopPropagation();
+
+  const openExpandedCard = (card) => {
+    setExpandedCard(card);
+    onExpandedOpen();
+  };
+
+  const closeExpandedCard = () => {
+    onExpandedClose();
+    setExpandedCard(null);
+  };
+
+  const statusColorScheme = (status) => {
+    if (status === 'completed') return 'green';
+    if (status === 'dismissed') return 'gray';
+    return 'pink';
+  };
+
+  useEffect(() => {
+    if (!expandedCard) return;
+    const updated = cards.find((c) => c.id === expandedCard.id);
+    if (!updated) {
+      closeExpandedCard();
+      return;
+    }
+    const changed =
+      updated.status !== expandedCard.status ||
+      updated.fullContent !== expandedCard.fullContent ||
+      updated.shortDescription !== expandedCard.shortDescription;
+    if (changed) setExpandedCard(updated);
+  }, [cards, expandedCard]);
+
+  const renderCardActions = (card, { compact = false } = {}) => {
+    const btnSize = compact ? 'xs' : 'sm';
+    const iconSize = compact ? 14 : 18;
+
+    return (
+    <HStack spacing={compact ? 1 : 2} justify="space-between" w="100%">
+      <HStack spacing={compact ? 1 : 2}>
+        <Button
+          size={btnSize}
+          h={compact ? '22px' : undefined}
+          fontSize={compact ? '10px' : undefined}
+          px={compact ? 2 : undefined}
+          colorScheme={(card.status || 'active') === 'completed' ? 'blue' : 'green'}
+          variant="outline"
+          onClick={(e) => {
+            stopCardClick(e);
+            handleSetStatus(card, (card.status || 'active') === 'completed' ? 'active' : 'completed');
+          }}
+        >
+          {(card.status || 'active') === 'completed' ? 'Reopen' : compact ? 'Done' : 'Mark done'}
+        </Button>
+        <Button
+          size={btnSize}
+          h={compact ? '22px' : undefined}
+          fontSize={compact ? '10px' : undefined}
+          px={compact ? 2 : undefined}
+          colorScheme={(card.status || 'active') === 'dismissed' ? 'blue' : 'gray'}
+          variant="outline"
+          onClick={(e) => {
+            stopCardClick(e);
+            handleSetStatus(card, (card.status || 'active') === 'dismissed' ? 'active' : 'dismissed');
+          }}
+        >
+          {(card.status || 'active') === 'dismissed' ? (compact ? 'Undo' : 'Undismiss') : 'Dismiss'}
+        </Button>
+      </HStack>
+      <HStack spacing={0}>
+        <Tooltip label="Like" hasArrow>
+          <IconButton
+            icon={<FaThumbsUp size={iconSize} />}
+            aria-label="Like"
+            variant="ghost"
+            size={btnSize}
+            onClick={(e) => {
+              stopCardClick(e);
+              handleLike(card);
+            }}
+            color={cardFeedback[card.id] === 'like' ? 'green.500' : 'gray.400'}
+            _hover={{
+              bg: 'gray.100',
+              color: cardFeedback[card.id] === 'like' ? 'green.600' : 'gray.500',
+            }}
+            borderRadius="full"
+          />
+        </Tooltip>
+        <Tooltip label="Dislike" hasArrow>
+          <IconButton
+            icon={<FaThumbsDown size={iconSize} />}
+            aria-label="Dislike"
+            variant="ghost"
+            size={btnSize}
+            onClick={(e) => {
+              stopCardClick(e);
+              handleDislike(card);
+            }}
+            color={cardFeedback[card.id] === 'dislike' ? 'red.500' : 'gray.400'}
+            _hover={{
+              bg: 'gray.100',
+              color: cardFeedback[card.id] === 'dislike' ? 'red.600' : 'gray.500',
+            }}
+            borderRadius="full"
+          />
+        </Tooltip>
+      </HStack>
+    </HStack>
+    );
   };
 
   return (
     <Box width="100%" py={3} px={4} display="flex" flexDirection="column" minH={0}>
-      <Flex justify="space-between" align="center" mb={3} flexWrap="wrap" gap={2} flexShrink={0}>
+      <Flex justify="space-between" align="center" mb={2.5} flexWrap="wrap" gap={2} flexShrink={0}>
         <Button
           as="h3"
           colorScheme="pink"
-          leftIcon={<Box as="span" fontSize="xl">+</Box>}
+          size="sm"
+          leftIcon={<Box as="span" fontSize="lg">+</Box>}
           onClick={() => fetchNudges({ useSmart: true, trigger: 'manual_card' })} // Manual "Add Card" uses smart logic
           isLoading={isLoading}
-          borderRadius="lg"
-          px={4}
-          py={2}
+          borderRadius="md"
+          px={3}
           fontWeight="bold"
         >
           Add Card
@@ -368,7 +497,7 @@ const ExpandableCards = ({
             colorScheme="green"
             onClick={() => setFilter('active')}
           >
-            Active ({cards.filter(card => (card.status || 'active') === 'active').length})
+            Active ({panelCards.filter(card => (card.status || 'active') === 'active').length})
           </Button>
           <Button
             size="sm"
@@ -389,30 +518,55 @@ const ExpandableCards = ({
         </HStack>
       </Flex>
       
-      <HStack spacing={5} overflowX="auto" align="stretch" pb={2} flexShrink={0} sx={{ scrollbarGutter: "stable" }}>
-        {filteredCards.map((card, idx) => (
+      <HStack spacing={3} overflowX="auto" align="stretch" py={2} flexShrink={0} sx={{ scrollbarGutter: "stable" }}>
+        {filteredCards.map((card) => (
           <Box
             key={card.id}
+            role="button"
+            tabIndex={0}
+            aria-label={`Open nudge ${card.displayId || card.title}`}
             bg="white"
-            borderRadius="lg"
+            borderRadius="md"
             boxShadow="sm"
             border="1px solid"
             borderColor="gray.200"
-            minW="240px"
-            maxW="240px"
-            p={3}
+            minW="220px"
+            maxW="220px"
+            maxH="168px"
+            p={2.5}
             display="flex"
             flexDirection="column"
             justifyContent="space-between"
             position="relative"
+            cursor="pointer"
+            transition="border-color 0.15s, box-shadow 0.15s, transform 0.15s"
+            _hover={{
+              borderColor: 'pink.300',
+              boxShadow: 'md',
+              transform: 'translateY(-1px)',
+            }}
+            _focusVisible={{
+              outline: '2px solid',
+              outlineColor: 'pink.400',
+              outlineOffset: '2px',
+            }}
+            onClick={() => openExpandedCard(card)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                openExpandedCard(card);
+              }
+            }}
           >
-            {/* X button to move to history */}
             <Tooltip label="Move to history" hasArrow>
               <IconButton
                 icon={<Box as="span" fontSize="lg">×</Box>}
                 aria-label="Move to history"
                 variant="ghost"
-                onClick={() => handleMoveToHistory(card)}
+                onClick={(e) => {
+                  stopCardClick(e);
+                  handleMoveToHistory(card);
+                }}
                 _hover={{ bg: 'gray.100' }}
                 borderRadius="full"
                 position="absolute"
@@ -420,71 +574,78 @@ const ExpandableCards = ({
                 right={2}
                 size="sm"
                 color="gray.500"
+                zIndex={1}
               />
             </Tooltip>
-            
-            <VStack align="stretch" spacing={2} flex="1">
-              <Text as="h4" fontWeight="bold" fontSize="sm" mb={1}>
+
+            <VStack align="stretch" spacing={0.5} flex="1" minH={0} overflow="hidden" pointerEvents="none">
+              <Text as="h4" fontWeight="bold" fontSize="xs" noOfLines={1} pr={5}>
                 {card.displayId ? `#${card.displayId} · ` : ''}{card.title}
               </Text>
-              <Text fontSize="xs" color="gray.500" textTransform="uppercase">
+              <Text fontSize="10px" color="gray.500" textTransform="uppercase" lineHeight="short">
                 {card.status || 'active'}
               </Text>
-              <Text fontSize="sm" color="gray.700" lineHeight="1.3">{card.shortDescription}</Text>
+              <Text fontSize="sm" color="gray.700" lineHeight="1.35" noOfLines={4} flex="1">
+                {card.shortDescription}
+              </Text>
+              <Text fontSize="10px" color="pink.500" fontWeight="medium">
+                Tap to expand
+              </Text>
             </VStack>
-            <HStack spacing={2} mt={2} justify="center">
-              <Button
-                size="xs"
-                colorScheme={(card.status || 'active') === 'completed' ? 'blue' : 'green'}
-                variant="outline"
-                onClick={() => handleSetStatus(card, (card.status || 'active') === 'completed' ? 'active' : 'completed')}
-              >
-                {(card.status || 'active') === 'completed' ? 'Reopen' : 'Complete'}
-              </Button>
-              <Button
-                size="xs"
-                colorScheme={(card.status || 'active') === 'dismissed' ? 'blue' : 'gray'}
-                variant="outline"
-                onClick={() => handleSetStatus(card, (card.status || 'active') === 'dismissed' ? 'active' : 'dismissed')}
-              >
-                {(card.status || 'active') === 'dismissed' ? 'Undismiss' : 'Dismiss'}
-              </Button>
-            </HStack>
-            <HStack spacing={3} mt={3} justify="center">
-              <Tooltip label="Like" hasArrow>
-                <IconButton
-                    icon={<FaThumbsUp size={18} />}
-                  aria-label="Like"
-                  variant="ghost"
-                  onClick={() => handleLike(card)}
-                  color={cardFeedback[card.id] === 'like' ? 'green.500' : 'gray.400'}
-                  _hover={{ 
-                    bg: 'gray.100',
-                    color: cardFeedback[card.id] === 'like' ? 'green.600' : 'gray.500'
-                  }}
-                  borderRadius="full"
-                  size="lg"
-                />
-              </Tooltip>
-              <Tooltip label="Dislike" hasArrow>
-                <IconButton
-                  icon={<FaThumbsDown size={18} />}
-                  aria-label="Dislike"
-                  variant="ghost"
-                  onClick={() => handleDislike(card)}
-                  color={cardFeedback[card.id] === 'dislike' ? 'red.500' : 'gray.400'}
-                  _hover={{ 
-                    bg: 'gray.100',
-                    color: cardFeedback[card.id] === 'dislike' ? 'red.600' : 'gray.500'
-                  }}
-                  borderRadius="full"
-                    size="sm"
-                />
-              </Tooltip>
-            </HStack>
+            <Box mt={1} flexShrink={0} onClick={stopCardClick}>
+              {renderCardActions(card, { compact: true })}
+            </Box>
           </Box>
         ))}
       </HStack>
+
+      <Modal
+        isOpen={isExpandedOpen && Boolean(expandedCard)}
+        onClose={closeExpandedCard}
+        size="md"
+        motionPreset="scale"
+        isCentered
+      >
+        <ModalOverlay bg="blackAlpha.400" backdropFilter="blur(2px)" />
+        <ModalContent borderRadius="xl" mx={4}>
+          {expandedCard ? (
+            <>
+              <ModalHeader pb={2} pr={12}>
+                <HStack spacing={2} align="center" flexWrap="wrap">
+                  <Text fontSize="lg" fontWeight="bold">
+                    {expandedCard.displayId ? `#${expandedCard.displayId}` : 'Nudge'}
+                    {expandedCard.title ? ` · ${expandedCard.title}` : ''}
+                  </Text>
+                  <Badge colorScheme={statusColorScheme(expandedCard.status || 'active')} textTransform="uppercase">
+                    {expandedCard.status || 'active'}
+                  </Badge>
+                </HStack>
+              </ModalHeader>
+              <ModalCloseButton />
+              <ModalBody pt={0}>
+                <Text fontSize="md" color="gray.700" lineHeight="1.6" whiteSpace="pre-wrap">
+                  {expandedCard.fullContent || expandedCard.shortDescription}
+                </Text>
+              </ModalBody>
+              <ModalFooter flexDirection="column" alignItems="stretch" gap={3}>
+                {renderCardActions(expandedCard)}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  colorScheme="gray"
+                  alignSelf="flex-end"
+                  onClick={() => {
+                    handleMoveToHistory(expandedCard);
+                    closeExpandedCard();
+                  }}
+                >
+                  Move to history
+                </Button>
+              </ModalFooter>
+            </>
+          ) : null}
+        </ModalContent>
+      </Modal>
     </Box>
   );
 };
